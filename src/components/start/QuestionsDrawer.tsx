@@ -1,20 +1,20 @@
 import { useState } from "react";
 import AgentChat from "@/components/contact/AgentChat";
 
-/** "Questions?" on the Tier and Pay steps. Opens the contact agent without leaving the flow. */
+/** "Questions?" at the top of every step. Opens the contact agent without leaving the flow. */
 export default function QuestionsDrawer() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="fixed bottom-5 left-5 z-40 bg-[#FFD230] px-4 py-3 font-mono text-[10px] uppercase tracking-[0.2em] text-[#0B0B0B] shadow-[0_0_0_2px_#0B0B0B]">
+      <button type="button" onClick={() => setOpen(true)} className="min-h-[44px] text-[13px] font-bold uppercase tracking-[0.14em] text-bone underline decoration-blood decoration-2 underline-offset-4 hover:text-blood-hi">
         Questions? Chat with PMG
       </button>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-start bg-black/60 p-4 sm:p-6" onClick={() => setOpen(false)}>
-          <div className="w-full max-w-md bg-[#0B0B0B] text-[#F2EFE9]" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-[#F2EFE9]/25 px-4 py-2">
-              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#9A9A9E]">A person reads every thread</span>
-              <button type="button" onClick={() => setOpen(false)} className="font-mono text-[10px] uppercase tracking-[0.2em]">Close</button>
+        <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/70 p-4 sm:p-6" onClick={() => setOpen(false)}>
+          <div role="dialog" aria-label="Chat with PMG" className="w-full max-w-md border border-rule bg-ink text-bone" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-rule px-4 py-2">
+              <span className="text-[12px] font-bold uppercase tracking-[0.16em] text-ash">A person reads every thread</span>
+              <button type="button" onClick={() => setOpen(false)} className="min-h-[44px] px-2 text-[12px] font-bold uppercase tracking-[0.16em] text-bone hover:text-blood-hi">Close</button>
             </div>
             <AgentChat />
           </div>

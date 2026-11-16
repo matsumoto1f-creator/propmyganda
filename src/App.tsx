@@ -56,7 +56,8 @@ const queryClient = new QueryClient();
 
 const PublicLayout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
-  const hideSocialDock = location.pathname === "/propworld" || location.pathname === "/exclusive";
+  // The booking flow keeps its own actions pinned to the bottom of the screen; the dock would sit on top of them.
+  const hideSocialDock = location.pathname === "/propworld" || location.pathname === "/exclusive" || location.pathname.startsWith("/start");
   return (
     <>
       <Navbar />

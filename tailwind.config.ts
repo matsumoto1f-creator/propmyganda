@@ -20,6 +20,8 @@ export default {
         grunge: ["Archivo Black", "Archivo", "Impact", "sans-serif"],
         drip: ["Archivo Black", "Archivo", "Impact", "sans-serif"],
         mono: ["Space Mono", "ui-monospace", "SFMono-Regular", "monospace"],
+        // /start flow: the poster face from the Release Onboarding document.
+        poster: ["Anton", "Impact", "Archivo Black", "sans-serif"],
       },
 
       colors: {
@@ -52,6 +54,18 @@ export default {
           DEFAULT: "hsl(var(--electric))",
           foreground: "hsl(var(--electric-foreground))",
         },
+        // /start flow palette, from the Release Onboarding document: ink, bone, one red.
+        ink: "#111111",
+        coal: "#1A1A1A",
+        rule: "#3A3A3A",
+        // Field and control outlines: 3:1 against ink so the box itself is visible.
+        edge: "#707070",
+        ash: "#9A9A9A",
+        smoke: "#BDBDBD",
+        bone: "#F2EFE8",
+        blood: "#D7261E",
+        // The red, lifted so small text on ink still passes contrast.
+        "blood-hi": "#FF6A5E",
         // CRM team member accents
         mike:   "#00F0FF",
         steven: "#d97000",

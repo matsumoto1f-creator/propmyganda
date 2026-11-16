@@ -7,13 +7,14 @@ import AddOns from "@/components/start/AddOns";
 // what's around it. Plain, short, the way the rest of the flow reads.
 export default function StartPrep() {
   return (
-    <main className="min-h-screen bg-[#0B0B0B] text-[#F2EFE9]">
+    <main className="min-h-screen bg-ink font-sans text-bone">
       <SEO title="Prep — PMG" description="The first five minutes after the collab posts, how to get to the room in DUMBO, and what's around it." path="/start/prep" />
-      <div className="mx-auto max-w-4xl px-6 pb-20 pt-28 md:px-10 md:pt-32">
-        <header className="pb-8">
-          <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#FFD230]">Propmyganda · Prep</p>
-          <h1 className="font-display text-5xl uppercase leading-[0.85] tracking-[-0.03em] md:text-8xl">Make it land.</h1>
-          <p className="mt-3 max-w-md font-mono text-[11px] uppercase leading-5 tracking-[0.14em] text-[#9A9A9E]">
+      <div className="mx-auto max-w-5xl px-6 pb-20 pt-28 md:px-10 md:pt-36">
+        <header className="pb-10">
+          <p className="text-[12px] font-bold uppercase tracking-[0.22em] text-ash">Propmyganda · Prep</p>
+          <h1 className="mt-5 font-poster text-[17vw] uppercase leading-[0.88] sm:text-[96px] md:text-[128px]">Make it land.</h1>
+          <div aria-hidden="true" className="mt-6 h-2.5 w-40 bg-blood" />
+          <p className="mt-6 max-w-xl text-[18px] font-medium leading-[1.45] md:text-[22px]">
             The push works if you're in it. Here's the whole of what we ask, and what's around the room.
           </p>
         </header>
@@ -23,8 +24,8 @@ export default function StartPrep() {
         <AddOns />
 
         <div className="mt-10 flex flex-wrap gap-3">
-          <Link to="/start" className="bg-[#FFD230] px-6 py-4 font-mono text-[11px] uppercase tracking-[0.2em] text-[#0B0B0B]">Back to your order →</Link>
-          <Link to="/artists" className="border border-[#F2EFE9]/40 px-6 py-4 font-mono text-[11px] uppercase tracking-[0.2em]">The roster</Link>
+          <Link to="/start" className="inline-flex min-h-[52px] items-center bg-blood px-7 text-[14px] font-bold uppercase tracking-[0.12em] text-white transition-colors hover:bg-bone hover:text-ink">Back to your order</Link>
+          <Link to="/artists" className="inline-flex min-h-[52px] items-center border border-rule px-7 text-[14px] font-bold uppercase tracking-[0.12em] text-bone transition-colors hover:border-bone">The roster</Link>
         </div>
       </div>
     </main>

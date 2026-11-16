@@ -33,18 +33,19 @@ export default function StartDone() {
   const paid = !!order?.paid_at;
 
   return (
-    <main className="min-h-screen bg-[#0B0B0B] text-[#F2EFE9]">
+    <main className="min-h-screen bg-ink font-sans text-bone">
       <SEO title="You're in — PMG" description="Order received." path="/start/done" />
-      <header className="mx-auto max-w-4xl px-6 pb-6 pt-28 md:px-10 md:pt-32">
-        <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#FFD230]">Propmyganda · {order?.catalogue_no ?? "Receipt"}</p>
-        <h1 className="font-display text-5xl uppercase leading-[0.85] tracking-[-0.03em] md:text-8xl">{paid ? "Welcome to the machine." : "Confirming…"}</h1>
+      <header className="mx-auto max-w-5xl px-6 pb-10 pt-28 md:px-10 md:pt-36">
+        <p className="text-[12px] font-bold uppercase tracking-[0.22em] text-ash">Propmyganda · {order?.catalogue_no ?? "Receipt"}</p>
+        <h1 className="mt-5 font-poster text-[17vw] uppercase leading-[0.88] sm:text-[96px] md:text-[128px]">{paid ? "Welcome to the machine." : "Confirming…"}</h1>
+        <div aria-hidden="true" className="mt-6 h-2.5 w-40 bg-blood" />
       </header>
-      <section className="mx-auto max-w-4xl px-6 pb-20 md:px-10">
-        <div className="max-w-xl">
+      <section className="mx-auto max-w-5xl px-6 pb-20 md:px-10">
+        <div className="max-w-2xl">
           {!order ? (
             <Note>{tries > 0 ? "Waiting on the payment confirmation…" : "Loading your order…"}</Note>
           ) : (
-            <div className="border border-[#F2EFE9]/30 p-5 font-mono text-[11px] uppercase tracking-[0.14em]">
+            <dl className="border border-rule bg-coal px-5 py-2 md:px-6">
               {[
                 ["Artist", order.artist_name],
                 ["Tier", `${tier?.name ?? order.tier} · ${formatUsd(order.total_cents)}`],
@@ -55,33 +56,42 @@ export default function StartDone() {
                 ["Files", String(order.uploads?.length ?? 0)],
                 ["Status", order.status.replace("_", " ")],
               ].map(([k, v]) => (
-                <div key={k} className="flex items-baseline justify-between gap-4 border-b border-[#F2EFE9]/15 py-2 last:border-b-0">
-                  <span className="text-[#9A9A9E]">{k}</span><span className="text-right">{v}</span>
+                <div key={k} className="flex items-baseline justify-between gap-6 border-b border-rule py-3 text-[15px] leading-6 last:border-b-0">
+                  <dt className="shrink-0 text-ash">{k}</dt><dd className="text-right font-medium text-bone">{v}</dd>
                 </div>
               ))}
-            </div>
+            </dl>
           )}
 
-          <div className="mt-8 space-y-2 font-mono text-[11px] uppercase leading-5 tracking-[0.14em] text-[#F2EFE9]">
-            <p className="text-[#FFD230]">What happens next</p>
-            <p>01 — Jay confirms your submission and your date by email. One thread, start to finish.</p>
-            <p>02 — Edits get made. Revisions happen in that window, not the day of.</p>
-            <p>03 — Your record goes out on the date you picked. Collab posts push to TikTok, Instagram and YouTube.</p>
-            <p>04 — Ad report or dashboard link lands the way you asked.</p>
-            <p className="pt-2 text-[#9A9A9E]">Your email has the full guide: getting to the room, what's around it, and how to make the post land. It's also at <Link to="/start/prep" className="text-[#FFD230] underline">propmyganda.com/start/prep</Link>.</p>
-            {order?.payment_plan === "deposit" && !order.balance_paid_at && <p className="pt-2"><Link to={`/start/balance?order=${orderId}&token=${token}`} className="text-[#FFD230] underline">Pay the balance now</Link> — or we charge the card the day before, or bring cash.</p>}
-            {params.get("balance") === "paid" && <p className="pt-2 text-[#FFD230]">Balance paid. You're paid in full.</p>}
-          </div>
+          {order?.payment_plan === "deposit" && !order.balance_paid_at && (
+            <p className="mt-5 border-l-4 border-blood bg-coal px-4 py-3 text-[15px] leading-6 text-bone"><Link to={`/start/balance?order=${orderId}&token=${token}`} className="font-bold text-bone underline decoration-blood decoration-2 underline-offset-4 hover:text-blood-hi">Pay the balance now</Link>, or we charge the card the day before, or bring cash.</p>
+          )}
+          {params.get("balance") === "paid" && <p className="mt-5 border-l-4 border-blood bg-coal px-4 py-3 text-[15px] font-bold leading-6 text-bone">Balance paid. You're paid in full.</p>}
         </div>
 
-        {paid && <div className="mt-12"><AddOns orderRef={order?.catalogue_no} /></div>}
+        <div className="mt-14">
+          <h2 className="font-poster text-[32px] uppercase leading-none text-bone md:text-[40px]">What happens next</h2>
+          <ol className="mt-6 grid gap-x-5 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              "Jay confirms your submission and your date by email. One thread, start to finish.",
+              "Edits get made. Revisions happen in that window, not the day of.",
+              "Your record goes out on the date you picked. Collab posts push to TikTok, Instagram and YouTube.",
+              "Ad report or dashboard link lands the way you asked.",
+            ].map((t, i) => (
+              <li key={t} className="border-t-[3px] border-bone pt-3">
+                <span className="block font-poster text-[30px] leading-none text-blood">{i + 1}</span>
+                <span className="mt-2 block text-[15px] font-medium leading-[22px] text-bone">{t}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-8 max-w-2xl text-[15px] leading-6 text-smoke">Your email has the full guide: getting to the room, what's around it, and how to make the post land. It's also at <Link to="/start/prep" className="font-bold text-bone underline decoration-blood decoration-2 underline-offset-4 hover:text-blood-hi">propmyganda.com/start/prep</Link>.</p>
+        </div>
 
-        <div className="max-w-xl">
+        {paid && <div className="mt-14"><AddOns orderRef={order?.catalogue_no} /></div>}
 
-          <div className="mt-10 flex flex-wrap gap-3">
-            <Link to="/artists" className="bg-[#FFD230] px-6 py-4 font-mono text-[11px] uppercase tracking-[0.2em] text-[#0B0B0B]">The roster →</Link>
-            <Link to="/" className="border border-[#F2EFE9]/40 px-6 py-4 font-mono text-[11px] uppercase tracking-[0.2em]">Home</Link>
-          </div>
+        <div className="mt-10 flex flex-wrap gap-3">
+          <Link to="/artists" className="inline-flex min-h-[52px] items-center bg-blood px-7 text-[14px] font-bold uppercase tracking-[0.12em] text-white transition-colors hover:bg-bone hover:text-ink">The roster</Link>
+          <Link to="/" className="inline-flex min-h-[52px] items-center border border-rule px-7 text-[14px] font-bold uppercase tracking-[0.12em] text-bone transition-colors hover:border-bone">Home</Link>
         </div>
       </section>
     </main>

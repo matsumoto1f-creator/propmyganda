@@ -5,15 +5,19 @@ import type { ReactNode } from "react";
 
 export function Block({ n, title, children, compact }: { n: string; title: string; children: ReactNode; compact?: boolean }) {
   return (
-    <section className={compact ? "border-t border-[#F2EFE9]/20 py-5" : "border-t border-[#F2EFE9]/20 py-8"}>
-      <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#FFD230]">{n}</p>
-      <h2 className={`mt-1 font-display uppercase leading-[0.9] tracking-[-0.03em] ${compact ? "text-2xl" : "text-3xl md:text-4xl"}`}>{title}</h2>
-      <div className="mt-4 space-y-2 font-mono text-[11px] uppercase leading-5 tracking-[0.14em] text-[#F2EFE9]">{children}</div>
+    <section className={compact ? "border-t border-rule py-6" : "border-t border-rule py-10"}>
+      <div className="flex items-baseline gap-4">
+        <span className={`font-poster leading-none text-blood ${compact ? "text-[32px]" : "text-[40px] md:text-[48px]"}`}>{n}</span>
+        <h2 className={`font-poster uppercase leading-none tracking-[0.01em] text-bone ${compact ? "text-[24px]" : "text-[28px] md:text-[36px]"}`}>{title}</h2>
+      </div>
+      <ul className="mt-5 max-w-3xl space-y-3 text-[15px] leading-6 text-bone">{children}</ul>
     </section>
   );
 }
 
-export const L = ({ children }: { children: ReactNode }) => <p><span className="text-[#FFD230]">›</span> {children}</p>;
+export const L = ({ children }: { children: ReactNode }) => (
+  <li className="flex gap-3"><span aria-hidden="true" className="mt-[9px] h-[7px] w-[7px] shrink-0 bg-blood" /><span>{children}</span></li>
+);
 
 /** Getting to the room and what's around it. */
 export function AreaBlocks({ compact, from = 1 }: { compact?: boolean; from?: number }) {
