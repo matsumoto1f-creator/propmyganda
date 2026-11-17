@@ -41,7 +41,7 @@ export const TIERS: Tier[] = [
     id: "dsp",
     name: "DSP Release",
     priceCents: 0,
-    tagline: "$0 up front. Split on streams.",
+    tagline: "Released under Propmyganda. Split on streams.",
     includes: [
       "Everything in Mid",
       "A record released under Propmyganda on every DSP via UnitedMasters",
@@ -108,7 +108,7 @@ export const TIERS: Tier[] = [
     id: "comp",
     name: "Invited",
     priceCents: 0,
-    tagline: "On us. Everything in Mid.",
+    tagline: "Everything in Mid.",
     includes: MID_INCLUDES,
     adBudgetAddOn: false,
     depositAllowed: false,

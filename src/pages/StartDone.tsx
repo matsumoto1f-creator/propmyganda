@@ -43,13 +43,15 @@ export default function StartDone() {
       <section className="mx-auto max-w-5xl px-6 pb-20 md:px-10">
         <div className="max-w-2xl">
           {!order ? (
-            <Note>{tries > 0 ? "Waiting on the payment confirmation…" : "Loading your order…"}</Note>
+            <Note>{tries > 0 ? "Confirming your order…" : "Loading your order…"}</Note>
           ) : (
             <dl className="border border-rule bg-coal px-5 py-2 md:px-6">
               {[
                 ["Artist", order.artist_name],
-                ["Tier", `${tier?.name ?? order.tier} · ${formatUsd(order.total_cents)}`],
-                ["Paid", paid ? `${formatUsd(order.due_now_cents)}${order.payment_plan === "deposit" ? " deposit" : ""}` : "pending"],
+                // A plan with nothing to pay shows no price and no payment line.
+                ...(order.total_cents > 0
+                  ? [["Tier", `${tier?.name ?? order.tier} · ${formatUsd(order.total_cents)}`], ["Paid", paid ? `${formatUsd(order.due_now_cents)}${order.payment_plan === "deposit" ? " deposit" : ""}` : "pending"]]
+                  : [["Plan", tier?.name ?? order.tier]]),
                 ...(order.session_at ? [["Shoot", `${fmtSlot(order.session_at)} ET · 30 min`]] : []),
                 ["Release", order.post_at ? `${fmtSlot(order.post_at)} ET` : "we'll place you by email"],
                 ...(order.payment_plan === "deposit" ? [["Balance", order.balance_paid_at ? `paid · ${order.balance_method ?? ""}` : `${formatUsd(order.total_cents - order.due_now_cents)} · the day before the shoot, by link, or cash`]] : []),

@@ -14,12 +14,16 @@ const PRO_OPTIONS = ["", "BMI", "ASCAP", "SESAC", "Other", "None"];
 const AD_PICKS = [0, 10_000, 25_000, 50_000, 100_000];
 
 /** Where you are in the five steps. A finished step is a way back to it. */
-function Stepper({ step, onJump }: { step: number; onJump: (n: number) => void }) {
+/** The step names. With nothing to charge, the last step is a confirmation, not a payment. */
+const stepNames = (free: boolean): readonly string[] => (free ? [...STEPS.slice(0, -1), "Confirm"] : STEPS);
+
+function Stepper({ step, onJump, free = false }: { step: number; onJump: (n: number) => void; free?: boolean }) {
+  const names = stepNames(free);
   return (
     <nav aria-label="Progress">
-      <p className="mb-3 text-[12px] font-bold uppercase tracking-[0.16em] text-smoke sm:hidden">Step {step + 1} of {STEPS.length} · {STEPS[step]}</p>
+      <p className="mb-3 text-[12px] font-bold uppercase tracking-[0.16em] text-smoke sm:hidden">Step {step + 1} of {names.length} · {names[step]}</p>
       <ol className="grid grid-cols-5 gap-1.5">
-        {STEPS.map((s, i) => {
+        {names.map((s, i) => {
           const done = i < step, current = i === step;
           const cls = `flex w-full items-baseline gap-2 border-t-4 pb-1 pt-3 text-left transition-colors ${current ? "border-blood text-bone" : done ? "border-bone text-bone" : "border-rule text-ash"}`;
           const inner = (
@@ -54,16 +58,21 @@ function PickMark({ active }: { active: boolean }) {
 const pick = (active: boolean) => (active ? "border-bone bg-bone text-ink" : "border-edge bg-transparent text-bone hover:border-bone");
 
 // ── 1. Tier ────────────────────────────────────────────────────────────────
-function priceLabel(t: Tier): string {
-  if (t.revenueShare) return "$0 up front";
-  if (t.priceCents === 0) return "On us";
-  return formatUsd(t.priceCents);
+// The invite plans (Invited, DSP Release) cost nothing, so they show no price, no total and no payment talk anywhere.
+function priceLabel(t: Tier): string | null {
+  return t.priceCents === 0 ? null : formatUsd(t.priceCents);
 }
 
 const RULES = [
   "A 50% deposit locks your date; the rest the day before, by link, or in cash.",
   "Move the shoot free up to 7 days out.",
   "Payments by Stripe.",
+  "You keep your masters.",
+];
+// The same rules with the money ones taken out, for plans with nothing to pay.
+const RULES_NO_CHARGE = [
+  "Your date is held the moment you confirm.",
+  "Move the shoot up to 7 days out.",
   "You keep your masters.",
 ];
 
@@ -88,8 +97,8 @@ function TierStep({ tier, setTier, adBudget, setAdBudget, onNext, invite }: { ti
                 <span className="font-poster text-[26px] uppercase leading-none tracking-[0.02em]">{t.name}</span>
                 <PickMark active={active} />
               </span>
-              <span className={`mt-5 font-poster uppercase leading-[0.9] ${t.priceCents === 0 ? "text-[48px]" : "text-[56px] lg:text-[64px]"}`}>{priceLabel(t)}</span>
-              <span className="mt-3 text-[16px] font-bold leading-6">{t.tagline}</span>
+              {priceLabel(t) && <span className="mt-5 font-poster text-[56px] uppercase leading-[0.9] lg:text-[64px]">{priceLabel(t)}</span>}
+              <span className={`text-[16px] font-bold leading-6 ${priceLabel(t) ? "mt-3" : "mt-4"}`}>{t.tagline}</span>
               <ul className="mb-6 mt-5 space-y-2 text-[14px] leading-[22px]">
                 {t.includes.map((i) => <Bullet key={i} tone={active ? "light" : "dark"}>{i}</Bullet>)}
               </ul>
@@ -132,7 +141,7 @@ function TierStep({ tier, setTier, adBudget, setAdBudget, onNext, invite }: { ti
       <div className="mt-10">
         <SectionHead title="The rules" />
         <ol className="mt-5 grid gap-x-5 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
-          {RULES.map((r, i) => (
+          {(q.tier.priceCents === 0 ? RULES_NO_CHARGE : RULES).map((r, i) => (
             <li key={r} className="border-t-[3px] border-bone pt-3">
               <span className="block font-poster text-[30px] leading-none text-blood">{i + 1}</span>
               <span className="mt-2 block text-[15px] font-medium leading-[22px] text-bone">{r}</span>
@@ -147,9 +156,9 @@ function TierStep({ tier, setTier, adBudget, setAdBudget, onNext, invite }: { ti
       <StepNav
         summary={
           q.tier.revenueShare ? (
-            <><span className="font-bold text-bone">{q.tier.name} · due today $0.</span> PMG is paid from the streaming split you sign.</>
+            <><span className="font-bold text-bone">{q.tier.name}.</span> PMG is paid from the streaming split you sign.</>
           ) : q.totalCents === 0 ? (
-            <span className="font-bold text-bone">{q.tier.name} · due today $0</span>
+            <span className="font-bold text-bone">{q.tier.name}</span>
           ) : (
             <><span className="font-bold text-bone">{q.tier.name} · total {formatUsd(q.totalCents)}.</span>{q.tier.depositAllowed && <> Deposit option at checkout.</>}</>
           )
@@ -624,27 +633,29 @@ function PayStep({ session, order, onBack }: { session: Session; order: Order; o
         <section>
           <SectionHead n={q.tier.depositAllowed ? "02" : "01"} title="Your order" />
           <div className="mt-5 border border-rule bg-coal p-5 md:p-6">
-            <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.16em] text-smoke">{order.catalogue_no} · receipt preview</p>
+            <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.16em] text-smoke">{order.catalogue_no} · {free ? "your booking" : "receipt preview"}</p>
             <dl>
               {row("Artist", order.artist_name)}
-              {row("Plan", `${q.tier.name} · ${priceLabel(q.tier)}`)}
+              {row("Plan", priceLabel(q.tier) ? `${q.tier.name} · ${priceLabel(q.tier)}` : q.tier.name)}
               {q.adBudgetCents > 0 && row("Extra ad budget", formatUsd(q.adBudgetCents))}
               {row("Release", order.post_at ? `${fmtSlot(order.post_at)} ET` : "to be placed")}
               {order.session_at && row("Shoot", `${fmtSlot(order.session_at)} ET · 30 min`)}
               {row("Files", String(order.uploads?.length ?? 0))}
               {order.wants_distribution && row("Distribution", `agreement signed by ${order.signature ?? order.legal_name}`)}
-              {q.tier.revenueShare ? row("PMG's share", "from the streaming split you signed") : row("Total", formatUsd(q.totalCents))}
+              {q.tier.revenueShare ? row("PMG's share", "from the streaming split you signed") : !free && row("Total", formatUsd(q.totalCents))}
               {q.balanceCents > 0 && row("Balance before posting", formatUsd(q.balanceCents))}
             </dl>
-            <div className="flex items-end justify-between gap-6 pt-5">
-              <span className="text-[13px] font-bold uppercase tracking-[0.14em] text-bone">Due now</span>
-              <span className="font-poster text-[52px] leading-[0.85] text-bone md:text-[64px]">{formatUsd(q.dueNowCents)}</span>
-            </div>
+            {!free && (
+              <div className="flex items-end justify-between gap-6 pt-5">
+                <span className="text-[13px] font-bold uppercase tracking-[0.14em] text-bone">Due now</span>
+                <span className="font-poster text-[52px] leading-[0.85] text-bone md:text-[64px]">{formatUsd(q.dueNowCents)}</span>
+              </div>
+            )}
           </div>
         </section>
 
         {free ? (
-          <Note>Nothing to charge. Confirm and your date is held, the calendar is booked and the agreement goes out by email.</Note>
+          <Note>Confirm and your date is held, the calendar is booked{order.wants_distribution ? " and the agreement goes out by email" : ""}.</Note>
         ) : (
           <ul className="grid gap-x-5 gap-y-6 sm:grid-cols-3">
             {[
@@ -663,7 +674,7 @@ function PayStep({ session, order, onBack }: { session: Session; order: Order; o
       </div>
 
       <StepNav onBack={onBack}>
-        <Button onClick={pay} disabled={busy}>{busy ? (free ? "Confirming…" : "Opening checkout…") : free ? "Confirm order" : `Pay ${formatUsd(q.dueNowCents)}`}</Button>
+        <Button onClick={pay} disabled={busy}>{busy ? (free ? "Confirming…" : "Opening checkout…") : free ? "Confirm" : `Pay ${formatUsd(q.dueNowCents)}`}</Button>
       </StepNav>
 
       <div className="pt-12">
@@ -754,6 +765,8 @@ export default function Start() {
   }
 
   const tierDef = quote(tier, adBudget).tier;
+  const free = quote(tier, order?.ad_budget_cents ?? adBudget).totalCents === 0;
+  const names = stepNames(free);
 
   return (
     <main className="min-h-screen bg-ink font-sans text-bone">
@@ -767,18 +780,18 @@ export default function Start() {
           <>
             <h1 className="mt-6 font-poster text-[21vw] uppercase leading-[0.86] sm:text-[112px] md:text-[136px]">You're in.</h1>
             <div aria-hidden="true" className="mt-6 h-2.5 w-40 bg-blood" />
-            <p className="mt-6 max-w-xl text-[18px] font-medium leading-[1.45] md:text-[22px]">Pick a plan. Fill it out once. Pick a date and hold it. We do the rest.</p>
+            <p className="mt-6 max-w-xl text-[18px] font-medium leading-[1.45] md:text-[22px]">{invite ? "" : "Pick a plan. "}Fill it out once. Pick a date and hold it. We do the rest.</p>
           </>
         ) : (
           <>
-            <h1 className="mt-5 font-poster text-[64px] uppercase leading-[0.9] md:text-[96px]">{STEPS[step]}</h1>
+            <h1 className="mt-5 font-poster text-[64px] uppercase leading-[0.9] md:text-[96px]">{names[step]}</h1>
             <p className="mt-3 text-[15px] font-medium leading-6 text-smoke">{tierDef.name} · {order?.catalogue_no ?? "PMG-R-###"}</p>
           </>
         )}
       </header>
 
       <section className="mx-auto max-w-5xl px-6 pb-16 md:px-10">
-        <Stepper step={step} onJump={go} />
+        <Stepper step={step} onJump={go} free={free} />
         <div className="mt-10">
           {err && <div className="mb-6"><ErrorLine>{err}</ErrorLine></div>}
           {inviteErr && <div className="mb-6"><ErrorLine>{inviteErr} Showing the public plans instead.</ErrorLine></div>}

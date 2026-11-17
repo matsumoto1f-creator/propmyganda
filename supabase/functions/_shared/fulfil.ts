@@ -34,8 +34,9 @@ async function signedLinks(supabase: SupabaseClient, uploads: OrderRow["uploads"
 
 function moneyLine(o: OrderRow, paidStatus: string): string {
   const tier = getTier(o.tier);
-  if (tier?.revenueShare) return "DSP Release · $0 up front · split on streams";
-  if (tier && tier.priceCents === 0) return "Invited · $0";
+  // The invite plans carry no price anywhere the artist can read it (the email, the calendar invite).
+  if (tier?.revenueShare) return "split on streams";
+  if (tier && tier.priceCents === 0) return "";
   return `${formatUsd(o.total_cents)}${o.payment_plan === "deposit" ? ` (deposit ${formatUsd(o.due_now_cents)} paid, balance due before posting)` : ` (${paidStatus})`}`;
 }
 
@@ -50,7 +51,7 @@ export async function fulfil(supabase: SupabaseClient, order: OrderRow, paidStat
   try {
     const { data: settings } = await supabase.from("crm_settings").select("value").eq("key", "gcal").maybeSingle();
     const calendarId: string = (settings?.value as { calendar_id?: string })?.calendar_id || "primary";
-    const base = [`${order.catalogue_no} · ${tier?.name ?? order.tier} · ${moneyLine(order, paidStatus)}`, `Email: ${order.email}`, order.phone && `Phone: ${order.phone}`, order.instagram_url && `IG: ${order.instagram_url}`, order.track_title && `Track: ${order.track_title}${order.explicit ? " (explicit)" : ""}`, uploads.length ? `Files:\n${uploads.map((u) => u.url).join("\n")}` : ""].filter(Boolean).join("\n");
+    const base = [[order.catalogue_no, tier?.name ?? order.tier, moneyLine(order, paidStatus)].filter(Boolean).join(" · "), `Email: ${order.email}`, order.phone && `Phone: ${order.phone}`, order.instagram_url && `IG: ${order.instagram_url}`, order.track_title && `Track: ${order.track_title}${order.explicit ? " (explicit)" : ""}`, uploads.length ? `Files:\n${uploads.map((u) => u.url).join("\n")}` : ""].filter(Boolean).join("\n");
     const row = order as unknown as { google_post_event_id?: string | null; google_session_event_id?: string | null };
     if (order.post_at && !row.google_post_event_id) patch.google_post_event_id = await calendarEvent(calendarId, `🚀 POST — ${order.artist_name}`, base, order.post_at, 1, order.email);
     if (order.session_at && !row.google_session_event_id) patch.google_session_event_id = await calendarEvent(calendarId, `🎬 SHOOT — ${order.artist_name}`, base, order.session_at, SESSION_MINUTES / 60, order.email);
@@ -74,7 +75,7 @@ export async function fulfil(supabase: SupabaseClient, order: OrderRow, paidStat
     const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "full", timeStyle: "short" }) : "—");
     await sendEmail(order.email, `PMG · ${order.catalogue_no} · you're in`, [
       `${order.artist_name} — you're in.`, "",
-      `Plan: ${tier?.name ?? order.tier} · ${moneyLine(order, paidStatus)}`,
+      `Plan: ${[tier?.name ?? order.tier, moneyLine(order, paidStatus)].filter(Boolean).join(" · ")}`,
       order.session_at ? `Shoot: ${when(order.session_at)} · 81 Prospect Street, DUMBO · 30 min` : "",
       order.post_at ? `Release: ${when(order.post_at)}` : "Release: we'll place you by email",
       `Files received: ${uploads.length}`,
