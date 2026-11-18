@@ -19,6 +19,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { GCAL_BASE, gcalHeaders } from "../_shared/gcal.ts";
 import { fulfil } from "../_shared/fulfil.ts";
 import { igLookup } from "../_shared/igLookup.ts";
+import { priceCart } from "../_shared/addons.ts";
 import { AGREEMENT_TEXT, AGREEMENT_VERSION, normalizeIpi, sha256Hex, validateSplits } from "../_shared/agreement.ts";
 import { TIERS, formatUsd, getTier, quote, type PaymentPlan } from "../_shared/tiers.ts";
 import { catalogueNo, formEncode, postSlots, sessionBlock, sessionSlots, type Busy, type OrderRow } from "../_shared/onboarding.ts";
@@ -139,8 +140,8 @@ async function calendarBusy(fromISO: string, toISO: string): Promise<Busy[]> {
 }
 
 /** Bump with every change so a GET on the function shows which build is live (Lovable only redeploys functions it notices changed). */
-const FUNCTION_VERSION = "2026-11-13.3";
-const ACTIONS = ["tiers", "agreement", "track", "invite-check", "create", "update", "ig-lookup", "upload-url", "upload-done", "availability", "checkout", "balance-link", "confirm", "status"];
+const FUNCTION_VERSION = "2026-11-18.1";
+const ACTIONS = ["tiers", "agreement", "track", "invite-check", "create", "update", "ig-lookup", "upload-url", "upload-done", "availability", "checkout", "balance-link", "addons-checkout", "confirm", "status"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -216,6 +217,42 @@ Deno.serve(async (req) => {
     }
 
     const order = await loadOrder(str(body.orderId, 40), str(body.token, 40));
+
+    // Add-ons: one Stripe checkout for everything picked on /start/addons. Prices come from the
+    // catalog, never from the browser. A booking is optional; with one, name and email come from it.
+    if (action === "addons-checkout") {
+      const key = Deno.env.get("STRIPE_SECRET_KEY");
+      if (!key) return json({ error: "Payments are not switched on yet (STRIPE_SECRET_KEY missing)", configured: false }, 503);
+      const cart = priceCart(body.items);
+      if ("error" in cart) return bad(cart.error);
+      const name = order?.artist_name ?? str(body.name, 120);
+      const mail = order?.email ?? email(body.email);
+      if (!name) return bad("Your artist name is needed");
+      if (!mail) return bad("An email we can reach you at is needed");
+      const site = (Deno.env.get("SITE_URL") ?? "https://propmyganda.com").replace(/\/$/, "");
+      const { data: row, error } = await supabase.from("addon_orders").insert({
+        order_id: order?.id ?? null, artist_name: name, email: mail, items: cart.lines, total_cents: cart.totalCents, notes: str(body.notes, 1000) || null,
+      }).select("id").single();
+      if (error) throw error;
+      const back = order ? `order=${order.id}&token=${order.client_token}&` : "";
+      const methods = ["card", ...(cart.totalCents >= 5_000 && cart.totalCents <= 3_000_000 ? ["affirm"] : [])];
+      const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded", "Idempotency-Key": `addon:${row.id}` },
+        body: formEncode({
+          mode: "payment", customer_email: mail, client_reference_id: row.id, payment_method_types: methods,
+          line_items: cart.lines.map((l) => ({ quantity: 1, price_data: { currency: "usd", unit_amount: l.priceCents, product_data: { name: `${l.name} — ${l.label}`, description: l.detail } } })),
+          metadata: { kind: "addon", addon_order_id: row.id, order_id: order?.id ?? "" },
+          payment_intent_data: { description: `${name} · PMG add-ons`, metadata: { kind: "addon", addon_order_id: row.id } },
+          success_url: `${site}/start/addons?${back}paid=${row.id}`, cancel_url: `${site}/start/addons?${back}cancelled=1`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return json({ error: data.error?.message ?? `Stripe ${res.status}` }, 502);
+      await supabase.from("addon_orders").update({ stripe_session_id: data.id }).eq("id", row.id);
+      return json({ url: data.url, totalCents: cart.totalCents });
+    }
+
     if (action === "ig-lookup") {
       const handle = igHandle(body.handle);
       if (!handle) return bad("Enter an Instagram handle");

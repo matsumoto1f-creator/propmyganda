@@ -8,7 +8,6 @@ import { formatUsd, getTier } from "./tiers.ts";
 import { EDITING_COLUMNS, SESSION_MINUTES, distributionRow, editingRow, type OrderRow } from "./onboarding.ts";
 import { AGREEMENT_TEXT, AGREEMENT_VERSION, splitsLine } from "./agreement.ts";
 import { sendEmail } from "./email.ts";
-import { ADDONS } from "./addons.ts";
 import { PREP_TEXT } from "./prepText.ts";
 
 const DEFAULT_DISTRO_SHEET = "1-lGUtKmwAL7SmfaAHXbbPZK7715Detj1M6Ts_r6-kls";
@@ -83,8 +82,8 @@ export async function fulfil(supabase: SupabaseClient, order: OrderRow, paidStat
       "",
       "Reply to this email for anything. One thread, start to finish.", "",
       PREP_TEXT, "",
-      "Once you're booked, these are open to you by request. Reply with the one you want and we quote it:",
-      ...ADDONS.map((a) => `  · ${a.name} — ${a.from}`), "", "— PMG",
+      "Once you're booked, the add-ons are open to you: clips, cover art, photos, merch and the rest, each with sizes and prices, on one page.",
+      `https://propmyganda.com/start/addons?order=${order.id}&token=${(order as unknown as { client_token?: string }).client_token ?? ""}`, "", "— PMG",
       ...(order.wants_distribution ? [
         "", "────────", `Your signed copy · PMG Streaming Release Agreement · version ${AGREEMENT_VERSION}`,
         `Signed by ${order.signature ?? order.legal_name} on ${(order as unknown as { signed_at?: string }).signed_at ?? "—"}`,

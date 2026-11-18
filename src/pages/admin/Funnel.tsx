@@ -15,6 +15,8 @@ const STEP_NAMES = ["", "Tier", "Details", "Upload", "Schedule", "Pay", "Paid"];
 interface Ev { visitor: string; step: number; tier: string | null; created_at: string }
 interface Ord { id: string; created_at: string; status: string; tier: string; last_step: number | null; email: string; artist_name: string; total_cents: number; due_now_cents: number; payment_plan: string; paid_at: string | null; followups: Record<string, string> | null; catalogue_no: string | null; session_at: string | null; post_at: string | null; balance_paid_at: string | null; balance_method: string | null; balance_note: string | null }
 
+interface AddOnOrder { id: string; created_at: string; artist_name: string; email: string; items: { name: string; label: string; priceCents: number }[]; total_cents: number; status: string; paid_at: string | null; notes: string | null }
+
 function pct(a: number, b: number) { return b ? `${Math.round((a / b) * 100)}%` : "—"; }
 
 export default function Funnel() {
@@ -37,6 +39,22 @@ export default function Funnel() {
       if (error) throw new Error(error.message);
       return (data ?? []) as Ev[];
     },
+  });
+  const { data: addonOrders = [] } = useQuery({
+    queryKey: ["addon-orders", days],
+    queryFn: async () => {
+      const { data, error } = await db.from("addon_orders").select("id,created_at,artist_name,email,items,total_cents,status,paid_at,notes").gte("created_at", since).order("created_at", { ascending: false }).limit(500);
+      if (error) return [] as AddOnOrder[]; // table not created yet
+      return (data ?? []) as AddOnOrder[];
+    },
+  });
+  const markAddonDone = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await db.from("addon_orders").update({ status: "done" }).eq("id", id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["addon-orders"] }); toast.success("Marked done"); },
+    onError: (e: Error) => toast.error(e.message),
   });
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["funnel-orders", days],
@@ -111,6 +129,23 @@ export default function Funnel() {
                 <span className="text-[10px] uppercase tracking-widest opacity-60">{o.session_at ? `shoot ${new Date(o.session_at).toLocaleDateString()}` : o.post_at ? `release ${new Date(o.post_at).toLocaleDateString()}` : "no date yet"}</span>
                 {o.balance_note && <span className="text-[10px] opacity-50">{o.balance_note}</span>}
                 <button type="button" onClick={() => markCash.mutate(o)} className="ml-auto border border-white/30 px-2.5 py-1 text-xs uppercase tracking-widest hover:border-white">Paid in cash</button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <h2 className="mt-10 mb-1 text-lg font-bold">Add-on orders</h2>
+        <p className="mb-3 text-xs opacity-50">Bought on /start/addons after a booking. Paid ones need lining up with the artist; mark each done when it is delivered.</p>
+        {addonOrders.filter((o) => o.status === "paid" || o.status === "done").length === 0 ? <p className="text-sm opacity-50">No paid add-on orders in this window.</p> : (
+          <ul className="space-y-1">
+            {addonOrders.filter((o) => o.status === "paid" || o.status === "done").map((o) => (
+              <li key={o.id} className={`flex flex-wrap items-center gap-x-3 gap-y-1 border px-3 py-2 text-sm ${o.status === "done" ? "border-white/10 opacity-50" : "border-white/25"}`}>
+                <span className="font-semibold">{o.artist_name}</span>
+                <a href={`mailto:${o.email}`} className="text-xs underline opacity-70">{o.email}</a>
+                <span className="tabular-nums" style={{ color: ACCENT }}>${(o.total_cents / 100).toLocaleString()}</span>
+                <span className="min-w-0 flex-1 text-xs opacity-70">{o.items.map((i) => `${i.name} (${i.label})`).join(" · ")}{o.notes ? ` — ${o.notes}` : ""}</span>
+                <span className="text-xs opacity-40">{new Date(o.paid_at ?? o.created_at).toLocaleDateString()}</span>
+                {o.status === "paid" && <button type="button" onClick={() => markAddonDone.mutate(o.id)} className="border border-white/30 px-2.5 py-1 text-xs uppercase tracking-widest hover:border-white">Done</button>}
               </li>
             ))}
           </ul>

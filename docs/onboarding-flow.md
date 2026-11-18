@@ -106,3 +106,15 @@ Deploy after these changes: `onboarding`, `stripe-webhook`, `onboarding-followup
 ## Email without a third-party account
 
 `_shared/email.ts` picks its transport from the secrets present. With `GMAIL_USER` and `GMAIL_APP_PASSWORD` it sends through Gmail over SMTP on port 465 (`_shared/smtp.ts`, a small client; Supabase blocks only ports 25 and 587). Mail comes from the team's own Gmail, replies land in that inbox, and Gmail's Sent folder is the copy. `NOTIFY_EMAIL` defaults to `GMAIL_USER`. Resend still works if `RESEND_API_KEY` is set and Gmail is not. A GET on `onboarding-followups` reports `email: gmail | resend | none`. Gmail allows about 500 recipients a day on a personal account.
+
+
+## Add-ons page
+
+`/start/addons` is the whole add-ons menu on one page, modelled on the team price list (`docs/PMG-Add-Ons.pdf`): the same services in the same groups, each with one to three sizes and a fixed price inside the PDF's range. An artist taps a size to add it, sees a running total pinned to the bottom, and pays once through Stripe (Affirm offered from $250). Custom work (performance video, concept video, press) shows its starting price and is quoted, not bought.
+
+- Catalog and prices: `supabase/functions/_shared/addons.ts`. Change a price there and the page, checkout, emails and the chat agent follow. A test checks every price against the PDF's ranges.
+- Checkout: the `addons-checkout` action prices the cart on the server, stores an `addon_orders` row (migration `20261118_022`) and opens Stripe. The webhook marks it paid and emails the artist and the team.
+- Reached from the done page, the prep page and the confirmation email, with the booking attached so the artist types nothing. It works without a booking too and then asks for name and email. It is not in the site nav and not in the booking steps.
+- Staff see paid add-on orders at `/admin/funnel` under "Add-on orders" and mark them done.
+
+Deploy after this: `onboarding`, `stripe-webhook`, `contact-agent`. Run migration `20261118_022`.

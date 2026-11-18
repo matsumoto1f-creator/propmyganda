@@ -89,7 +89,7 @@ export default function StartDone() {
           <p className="mt-8 max-w-2xl text-[15px] leading-6 text-smoke">Your email has the full guide: getting to the room, what's around it, and how to make the post land. It's also at <Link to="/start/prep" className="font-bold text-bone underline decoration-blood decoration-2 underline-offset-4 hover:text-blood-hi">propmyganda.com/start/prep</Link>.</p>
         </div>
 
-        {paid && <div className="mt-14"><AddOns orderRef={order?.catalogue_no} /></div>}
+        {paid && <div className="mt-14"><AddOns orderId={orderId} token={token} /></div>}
 
         <div className="mt-10 flex flex-wrap gap-3">
           <Link to="/artists" className="inline-flex min-h-[52px] items-center bg-blood px-7 text-[14px] font-bold uppercase tracking-[0.12em] text-white transition-colors hover:bg-bone hover:text-ink">The roster</Link>

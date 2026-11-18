@@ -4,6 +4,8 @@
 // Secrets: STRIPE_WEBHOOK_SECRET plus those listed in _shared/fulfil.ts.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { fulfil } from "../_shared/fulfil.ts";
+import { sendEmail, teamEmail } from "../_shared/email.ts";
+import { formatUsd } from "../_shared/tiers.ts";
 import { parseStripeSignature, type OrderRow } from "../_shared/onboarding.ts";
 
 async function verify(raw: string, header: string | null, secret: string): Promise<boolean> {
@@ -28,8 +30,25 @@ Deno.serve(async (req) => {
   const session = event.data.object;
   if (session.payment_status !== "paid") return ok({ received: true, pending: true });
 
-  const orderId = session.metadata?.order_id ?? session.client_reference_id;
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+  // Add-ons bought on /start/addons: mark the add-on order paid and tell the artist and the team.
+  if (session.metadata?.kind === "addon") {
+    const { data: ao } = await supabase.from("addon_orders").select("*").eq("id", session.metadata.addon_order_id ?? session.client_reference_id).maybeSingle();
+    if (!ao) return new Response("Add-on order not found", { status: 404 });
+    if (ao.paid_at) return ok({ received: true, duplicate: true });
+    await supabase.from("addon_orders").update({ status: "paid", paid_at: new Date().toISOString(), stripe_payment_intent: session.payment_intent ?? null, stripe_session_id: session.id }).eq("id", ao.id);
+    const list = (ao.items as { name: string; label: string; detail: string; priceCents: number }[]).map((l) => `  · ${l.name} — ${l.label} — ${formatUsd(l.priceCents)}\n    ${l.detail}`).join("\n");
+    const errors: string[] = [];
+    try {
+      await sendEmail(ao.email, "PMG · your add-ons are in", [`${ao.artist_name} — got it. Paid ${formatUsd(ao.total_cents)}.`, "", list, "", ao.notes ? `Your note: ${ao.notes}\n` : "", "A person on the team replies on this thread to line each one up. Reply here with anything we should know first.", "", "— PMG"].join("\n"), { bccTeam: true });
+      const team = teamEmail();
+      if (team) await sendEmail(team, `[PMG add-ons] ${ao.artist_name} · ${formatUsd(ao.total_cents)}`, [`${ao.artist_name} <${ao.email}> bought add-ons.`, "", list, "", ao.notes ? `Note: ${ao.notes}` : "", ao.order_id ? `Booking: ${ao.order_id}` : "No booking attached.", "", "https://propmyganda.com/admin/funnel"].join("\n"), { replyTo: ao.email });
+    } catch (e) { errors.push(`email: ${e instanceof Error ? e.message : e}`); }
+    return ok({ received: true, addon: true, errors });
+  }
+
+  const orderId = session.metadata?.order_id ?? session.client_reference_id;
   const { data: order } = await supabase.from("onboarding_orders").select("*").eq("id", orderId).maybeSingle();
   if (!order) return new Response("Order not found", { status: 404 });
 

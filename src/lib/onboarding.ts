@@ -50,6 +50,7 @@ export const api = {
   availability: (s: Session, kind: "post" | "session") => call<{ slots: Slot[] }>("availability", { orderId: s.orderId, token: s.token, kind }),
   checkout: (s: Session, plan: "full" | "deposit") => call<{ url?: string; error?: string; configured?: boolean }>("checkout", { orderId: s.orderId, token: s.token, plan }),
   status: (s: Session) => call<{ order: Order; tier: Tier }>("status", { orderId: s.orderId, token: s.token }),
+  addonsCheckout: (body: { orderId?: string; token?: string; name?: string; email?: string; items: { id: string; option: string }[]; notes?: string }) => call<{ url?: string; totalCents?: number; error?: string }>("addons-checkout", body),
   balanceLink: (s: Session) => call<{ url?: string; paid?: boolean; cents?: number; error?: string }>("balance-link", { orderId: s.orderId, token: s.token }),
   confirm: (s: Session) => call<{ ok: boolean; errors?: string[] }>("confirm", { orderId: s.orderId, token: s.token }),
   inviteCheck: (invite: string) => call<{ ok: boolean; tier?: string; label?: string | null; reason?: string }>("invite-check", { invite }),

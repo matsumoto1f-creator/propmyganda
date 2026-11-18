@@ -25,6 +25,7 @@ import Start from "./pages/Start";
 import StartDone from "./pages/StartDone";
 import StartBalance from "./pages/StartBalance";
 import StartPrep from "./pages/StartPrep";
+import StartAddOns from "./pages/StartAddOns";
 import PublicationDetail from "./pages/PublicationDetail";
 import Exclusive from "./pages/Exclusive";
 import NotFound from "./pages/NotFound";
@@ -125,6 +126,7 @@ const AppRoutes = () => {
           <Route path="/start/done"         element={<StartDone />} />
           <Route path="/start/balance" element={<StartBalance />} />
           <Route path="/start/prep"         element={<StartPrep />} />
+          <Route path="/start/addons"       element={<StartAddOns />} />
           {/* Legacy bio-link typo — redirect so visitors don't 404 */}
           <Route path="/exlusive"           element={<Navigate to="/exclusive" replace />} />
           <Route path="*"              element={<NotFound />} />
