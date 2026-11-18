@@ -1,0 +1,286 @@
+import {diagnostics} from './scene-diagnostics';
+/** Hysteresis over delivered frames or GPU samples. Texture fidelity and the
+ * path-dependent cloud integration budget is preserved; only the target scales.
+ */
+export class SceneQuality {
+ scale=1;
+ private samples:number[]=[];
+ private coolUntil=0;
+ private firstGPUWindow=true;
+ get warmingUp(){return this.firstGPUWindow;}
+ private lastCadence=0;
+ private lastAnimationFrame=0;
+ private animationIntervals:number[]=[];
+ private acquiringCadence=true;
+ private materialPending=false;
+ private severeStalls:number[]=[];
+ // Headroom: a scale that only just sustains the mean rate leaves no slack, so
+ // any heavier frame misses its display refresh and the motion stutters even
+ // though the average looks fine. Late frames therefore count as overload.
+ headroom=false;
+ private frameTarget=0;
+ private refreshPeriod=0;
+ private recent:number[]=[];
+ private headroomPending=false;
+ /** Current submission target and display refresh, in milliseconds. */
+ setCadence(target:number,refresh:number){this.frameTarget=target;this.refreshPeriod=refresh;}
+ // Overload makes frames miss one or two refreshes. A much longer gap is a
+ // stall elsewhere, a garbage collection, the compositor or another app; a
+ // smaller buffer would not prevent it, so it is not evidence of overload.
+ private lateFrames(){
+  const limit=this.frameTarget+Math.max(4,this.refreshPeriod*.5),stall=this.frameTarget+Math.max(25,this.refreshPeriod*2.5);
+  return this.recent.filter(ms=>ms>limit&&ms<=stall).length;
+ }
+ // RAF quantization informs the tail only. A slower RAF under GPU load must
+ // never relax the mean delivery budget and disguise a real FPS deficit.
+ observeAnimationFrame(now:number,cadenceFactor=1){
+  if(!Number.isFinite(now)||!Number.isFinite(cadenceFactor)||cadenceFactor<=0)return;
+  const interval=(now-this.lastAnimationFrame)*cadenceFactor;
+  if(this.lastAnimationFrame&&interval>0&&interval<250){
+   this.animationIntervals.push(interval);
+   if(this.animationIntervals.length>60)this.animationIntervals.shift();
+  }else this.animationIntervals=[];
+  this.lastAnimationFrame=now;
+ }
+ resetCadence(){
+  this.samples=[];this.stableSince=null;this.overloadedWindows=0;this.materialPending=false;
+  this.lastCadence=0;this.lastAnimationFrame=0;this.animationIntervals=[];this.severeStalls=[];
+ }
+ private cadenceTailLimit(){
+  if(this.animationIntervals.length<6)return 75;
+  const sorted=[...this.animationIntervals].sort((a,b)=>a-b);
+  const period=sorted[Math.floor(sorted.length*.2)];
+  return Math.ceil((1000/24)/period-1e-6)*period+8;
+ }
+ private stableSince:number|null=null;
+ private probeFrom:number|null=null;
+ private probeAfter=0;
+ private retryDelay=15000;
+ private overloadedWindows=0;
+ // A capped 24 FPS stream cannot prove spare GPU capacity. Try a small upscale
+ // after sustained delivery, then roll it back if the new size misses deadlines.
+ observeCadence(milliseconds:number,now:number,allowUpscale=true){
+  // Fast changing views do not establish spare capacity for a larger buffer.
+  // Keep downward adaptation, but wait for quiet playback before probing up.
+  if(!allowUpscale)this.probeAfter=Math.max(this.probeAfter,now+8000);
+  if(!Number.isFinite(milliseconds)||milliseconds<=0||milliseconds>5000||!Number.isFinite(now)){
+   this.samples=[];this.stableSince=null;this.overloadedWindows=0;this.materialPending=false;this.severeStalls=[];return false;
+  }
+  if(this.lastCadence&&now-this.lastCadence>2000){this.samples=[];this.stableSince=null;this.overloadedWindows=0;this.materialPending=false;this.severeStalls=[];this.recent=[];}
+  this.lastCadence=now;
+  if(this.headroom&&this.frameTarget>0&&!this.acquiringCadence){
+   this.recent.push(milliseconds);if(this.recent.length>24)this.recent.shift();
+   const late=this.lateFrames();
+   // Never resize mid-gesture: a reallocation is itself a stall. Apply the
+   // reduction once the view is quiet again.
+   if(late>=3)this.headroomPending=true;
+   if(this.headroomPending&&allowUpscale&&now>=this.coolUntil){
+    const previous=this.scale;
+    this.scale=Math.max(.45,this.scale-.06);
+    this.headroomPending=false;this.recent=[];this.samples=[];this.stableSince=null;
+    if(this.probeFrom!==null){this.probeFrom=null;this.probeAfter=now+this.retryDelay;this.retryDelay=Math.min(60000,this.retryDelay*2);}
+    this.coolUntil=now+1500;
+    return Math.abs(previous-this.scale)>.001;
+   }
+   // Any late frame in the window is not evidence of spare capacity.
+   if(late>0)this.stableSince=null;
+  }
+  if(!this.acquiringCadence){
+   this.severeStalls=milliseconds>120?[...this.severeStalls,milliseconds].slice(-6):[];
+  }
+  // Do not lose sustained emergency evidence while a resize is settling.
+  const prolonged=this.severeStalls.length===6&&this.severeStalls.reduce((sum,ms)=>sum+ms,0)>=2400-1e-6;
+  if(now<this.coolUntil&&!prolonged)return false;
+  this.samples.push(milliseconds);
+  const recent=prolonged?this.severeStalls:this.samples.slice(-6);
+  // Established quality also gives short, size-independent upload bursts a
+  // bounded first step. Six 400 ms frames still justify emergency recovery;
+  // startup retains its original six-stall response.
+  const severe=recent.length===6&&recent.every(ms=>ms>120)
+   &&(this.acquiringCadence||recent.reduce((sum,ms)=>sum+ms,0)>=2400-1e-6);
+  // A material load change must not spend two slow windows and five seconds
+  // at each obsolete size. GPU backpressure can bunch a long callback with
+  // a short one, so require a mean deficit rather than every frame being slow.
+  // Excluding the largest of eight samples protects an isolated upload stall.
+  const materialWindow=this.samples.slice(-8).sort((a,b)=>a-b);
+  const materialMean=materialWindow.slice(0,-1).reduce((sum,ms)=>sum+ms,0)/7;
+  const material=!severe&&!this.acquiringCadence&&materialWindow.length===8&&materialMean>62.5;
+  if(this.samples.length<(this.acquiringCadence?12:24)&&!severe&&!material)return false;
+  const window=severe?recent:material?this.samples.slice(-8):this.samples;
+  if(severe)this.severeStalls=[];
+  const sorted=window.sort((a,b)=>a-b),interval=sorted[Math.floor(sorted.length*.9)];
+  // Startup has only twelve samples and no second confirming window. Drop
+  // one outlier there so a single asset/upload stall does not blur the scene.
+  const delivery=this.acquiringCadence&&!severe?sorted.slice(0,-1):sorted;
+  const mean=delivery.reduce((sum,ms)=>sum+ms,0)/delivery.length;
+  this.samples=[];
+  // At 30 Hz, healthy 24 FPS includes 67 ms intervals. The tail alone is
+  // not overload evidence. A steady 50 ms cadence is still only 20 FPS,
+  // regardless of whether slow RAF callbacks look like a 20 Hz display.
+  if(mean>46){
+   this.stableSince=null;
+   this.overloadedWindows++;
+   if(!severe&&!material&&!this.acquiringCadence&&this.probeFrom===null&&this.overloadedWindows<2)return false;
+   this.overloadedWindows=0;
+   const previous=this.scale;
+   if(this.probeFrom!==null){
+    this.scale=severe?Math.max(.45,this.probeFrom*Math.sqrt(45/interval)):this.probeFrom;
+    this.probeFrom=null;this.probeAfter=now+this.retryDelay;
+    this.retryDelay=Math.min(60000,this.retryDelay*2);
+    this.materialPending=material;
+   }else if(this.acquiringCadence){
+    // Find a working size promptly after the first sharp animated frames.
+    // Limit each normal reduction to 30%; emergency stalls may reach the floor.
+    const factor=severe?Math.sqrt(45/interval):Math.max(.7,Math.min(.95,Math.sqrt((1000/24)/mean)*.95));
+    this.scale=Math.max(.45,this.scale*factor);
+   }else if(material){
+    // The first response is only one quality step: a short upload burst must
+    // not produce a large blur that takes a minute of upward probes to undo.
+    // Escalate only when material overload survives the settling interval.
+    if(!this.materialPending)this.scale=Math.max(.45,this.scale-.1);
+    else {
+     // Leave room for the next refresh boundary, including 30 Hz. This fixed
+     // budget cannot be inflated by callback delays caused by GPU work.
+     const factor=Math.max(.55,Math.min(.9,Math.sqrt((1000/30)/mean)*.98));
+     this.scale=Math.max(.45,this.scale*factor);
+    }
+    this.materialPending=true;
+   }else this.scale=severe?Math.max(.45,this.scale*Math.sqrt(45/interval)):Math.max(.45,this.scale-.1);
+   // A short settling interval also limits a two-second upload burst to one
+   // material reduction. Upward probes retain their independent slow policy.
+   this.coolUntil=now+(this.acquiringCadence?300:1500);
+   return Math.abs(previous-this.scale)>.001;
+  }
+  this.overloadedWindows=0;this.materialPending=false;
+  // Borderline delivery is not evidence for another step up. Isolated stalls
+  // do not lower the scale, but also do not count toward stable recovery.
+  if(interval>this.cadenceTailLimit()){this.stableSince=null;return false;}
+  this.stableSince??=now;
+  if(this.acquiringCadence){
+   if(now-this.stableSince<3000)return false;
+   this.acquiringCadence=false;
+  }
+  if(this.probeFrom!==null){
+   if(now-this.stableSince>=3000){this.probeFrom=null;this.retryDelay=15000;this.stableSince=now;}
+   return false;
+  }
+  if(this.scale>=1||now<this.probeAfter||now-this.stableSince<8000)return false;
+  this.probeFrom=this.scale;
+  this.scale=Math.min(1,Math.round((this.scale+.05)*10000)/10000);
+  this.stableSince=null;
+  this.coolUntil=now+300; // Let the resize finish before judging its cadence.
+  return true;
+ }
+ observe(milliseconds:number,now:number){
+  if(!Number.isFinite(milliseconds)||milliseconds<=0||milliseconds>5000||now<this.coolUntil)return false;
+  this.samples.push(milliseconds);
+  if(this.samples.length<(this.firstGPUWindow?6:12))return false;
+  this.firstGPUWindow=false;
+  const sorted=this.samples.sort((a,b)=>a-b),cost=sorted[Math.floor(sorted.length*.7)];
+  this.samples=[];
+  const next=cost>80?Math.max(.45,this.scale*Math.sqrt(30/cost)):cost>34?Math.max(.45,this.scale-.1):cost<17?Math.min(1,this.scale+.05):this.scale;
+  if(Math.abs(next-this.scale)<.001)return false;
+  this.scale=next;this.coolUntil=now+(cost>80?1500:cost>34?5000:15000);return true;
+ }
+}
+
+// WebGL 1 timer extension has no DOM TS declaration. Queries are asynchronous,
+// sparse and bounded. Never wait for GPU completion on the main thread.
+type TimerExtension={TIME_ELAPSED_EXT:number;GPU_DISJOINT_EXT:number;QUERY_RESULT_AVAILABLE_EXT:number;QUERY_RESULT_EXT:number;
+ createQueryEXT():object;beginQueryEXT(target:number,query:object):void;endQueryEXT(target:number):void;
+ getQueryObjectEXT(query:object,name:number):number|boolean;deleteQueryEXT(query:object):void};
+type GPUFrame={at:number;buffer:[number,number];profiled:boolean;target:string|null;passes:{name:string;query:object}[]};
+export class SceneTimer {
+ readonly quality=new SceneQuality();
+ private ext:TimerExtension|null;
+ private active:object|null=null;
+ private pending:GPUFrame[]=[];
+ private current:GPUFrame|null=null;
+ private frame=0;
+ private usingCadence=false;
+ private diagnostic=diagnostics();
+ private gl:WebGLRenderingContext;
+ constructor(gl:WebGLRenderingContext){
+  this.gl=gl;
+  if('createQuery' in gl){
+   const core=gl as WebGL2RenderingContext,ext=gl.getExtension('EXT_disjoint_timer_query_webgl2');
+   this.ext=ext?{
+    TIME_ELAPSED_EXT:ext.TIME_ELAPSED_EXT,GPU_DISJOINT_EXT:ext.GPU_DISJOINT_EXT,
+    QUERY_RESULT_AVAILABLE_EXT:core.QUERY_RESULT_AVAILABLE,QUERY_RESULT_EXT:core.QUERY_RESULT,
+    createQueryEXT:()=>core.createQuery()!,
+    beginQueryEXT:(target,query)=>core.beginQuery(target,query),endQueryEXT:target=>core.endQuery(target),
+    getQueryObjectEXT:(query,name)=>core.getQueryParameter(query,name),deleteQueryEXT:query=>core.deleteQuery(query),
+   }:null;
+  }else this.ext=gl.getExtension('EXT_disjoint_timer_query');
+  this.diagnostic?.environment({gpuTimerSupported:!!this.ext});
+ }
+ private useCadence(){
+  if(this.usingCadence)return;
+  this.usingCadence=true;
+  // GPU duration omits browser/compositor delivery delays, and an advertised
+  // timer may never yield usable results. Animated output owns its FPS budget.
+  // Keep GPU and frame-interval samples out of each other's windows.
+  this.quality.resetCadence();
+  if(this.ext)for(const frame of this.pending)for(const pass of frame.passes)this.ext.deleteQueryEXT(pass.query);
+  this.pending=[];
+ }
+ observeAnimationFrame(now:number,cadenceFactor=1){this.useCadence();this.quality.observeAnimationFrame(now,cadenceFactor);}
+ resetCadence(){this.usingCadence=false;this.quality.resetCadence();}
+ observeCadence(milliseconds:number,now:number,allowUpscale=true){this.useCadence();this.quality.observeCadence(milliseconds,now,allowUpscale);}
+ setCadence(target:number,refresh:number,headroom:boolean){this.quality.headroom=headroom;this.quality.setCadence(target,refresh);}
+ private discard(frame:GPUFrame){for(const pass of frame.passes)this.ext!.deleteQueryEXT(pass.query);}
+ private startPass(name:string){
+  const ext=this.ext!,query=ext.createQueryEXT();
+  if(!query){this.discard(this.current!);this.current=null;return;}
+  this.current!.passes.push({name,query});this.active=query;ext.beginQueryEXT(ext.TIME_ELAPSED_EXT,query);
+ }
+ begin(width=0,height=0){
+  if(!this.ext||(this.usingCadence&&!this.diagnostic?.active))return;
+  const ext=this.ext;
+  if(this.gl.getParameter(ext.GPU_DISJOINT_EXT)){
+   this.diagnostic?.event('gpu-disjoint');for(const frame of this.pending)this.discard(frame);this.pending=[];return;
+  }
+  this.pending=this.pending.filter(frame=>{
+   if(frame.passes.some(pass=>!ext.getQueryObjectEXT(pass.query,ext.QUERY_RESULT_AVAILABLE_EXT)))return true;
+   const passes:Record<string,number>={};let milliseconds=0;
+   for(const pass of frame.passes){const ms=Number(ext.getQueryObjectEXT(pass.query,ext.QUERY_RESULT_EXT))/1e6;passes[pass.name]=ms;milliseconds+=ms;}
+   this.discard(frame);
+   if(!Number.isFinite(milliseconds)||milliseconds<0)return false;
+   if(frame.profiled)this.diagnostic?.gpuPasses?.({at:frame.at,buffer:frame.buffer,passes});
+   else {
+    this.diagnostic?.gpu(milliseconds);
+    if(!this.usingCadence)this.quality.observe(milliseconds,performance.now());
+   }
+   return false;
+  });
+  // One query per sampled frame: multiple boundaries can force costly GPU
+  // pass breaks. Alternate whole-frame samples with one rotating render group.
+  // At most two asynchronous results may be pending.
+  const stride=this.usingCadence?12:this.quality.warmingUp||this.quality.scale<1?3:12;
+  const frame=this.frame++;
+  if(frame%stride!==0||this.pending.length>=2)return;
+  const profiled=!!this.diagnostic?.active&&this.usingCadence&&frame%24===12;
+  const groups=['sky','resources-and-lighting','source-attenuation','world','volumes','camera-finish'];
+  const target=profiled?groups[Math.floor(frame/24)%groups.length]:null;
+  this.current={at:performance.now(),buffer:[width,height],profiled,target,passes:[]};
+  if(!profiled||target==='sky')this.startPass(profiled?'sky':'frame');
+ }
+ section(name:string){
+  if(!this.current?.profiled)return;
+  if(this.active){this.ext!.endQueryEXT(this.ext!.TIME_ELAPSED_EXT);this.active=null;}
+  if(this.current.target===name&&!this.current.passes.length)this.startPass(name);
+ }
+ end(){
+  if(!this.ext||!this.current)return;
+  if(this.active){this.ext.endQueryEXT(this.ext.TIME_ELAPSED_EXT);this.active=null;}
+  if(this.current.passes.length)this.pending.push(this.current);
+  this.current=null;
+ }
+ dispose(){
+  if(!this.ext)return;
+  if(this.active)this.ext.endQueryEXT(this.ext.TIME_ELAPSED_EXT);
+  if(this.current)this.discard(this.current);
+  for(const frame of this.pending)this.discard(frame);
+  this.pending=[];this.current=null;this.active=null;
+ }
+}

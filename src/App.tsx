@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -11,14 +12,13 @@ import PageTransition from "@/components/webgl/PageTransition";
 import SocialDock from "@/components/SocialDock";
 import ProtectedRoute from "@/components/dashboard/ProtectedRoute";
 
-import Index from "./pages/Index";
+import HubHome from "./pages/HubHome";
 import Artists from "./pages/Artists";
 import ArtistDetail from "./pages/ArtistDetail";
 import Distribution from "./pages/Distribution";
 import Store from "./pages/Store";
 import ProductDetail from "./pages/ProductDetail";
 import Contact from "./pages/Contact";
-import Propworld from "./pages/Propworld";
 import Events from "./pages/Events";
 import Publication from "./pages/Publication";
 import Start from "./pages/Start";
@@ -29,6 +29,14 @@ import StartAddOns from "./pages/StartAddOns";
 import PublicationDetail from "./pages/PublicationDetail";
 import Exclusive from "./pages/Exclusive";
 import NotFound from "./pages/NotFound";
+import lazyWithRetry from "@/lib/lazyWithRetry";
+
+// The classic home page: shown when a device cannot run the hub. Loaded only then, so its 3D
+// logo scene no longer weighs on every other page.
+const Index = lazyWithRetry(() => import("./pages/Index"));
+// PropWorld is the only other page built on the 3D library. Loading it on demand keeps that
+// library (about 170 KB compressed) out of every other page's first download.
+const Propworld = lazyWithRetry(() => import("./pages/Propworld"));
 
 import Login from "./pages/auth/Login";
 import Callback from "./pages/auth/Callback";
@@ -106,17 +114,34 @@ const AppRoutes = () => {
     );
   }
 
+  // Home is the hub: it has its own nav, menu and footer links, so it sits outside the public
+  // layout. The classic home (with the layout) is its fallback.
+  if (location.pathname === "/") {
+    return (
+      <HubHome
+        classic={
+          <PageTransition key="/">
+            <PublicLayout>
+              <Suspense fallback={<div className="min-h-screen bg-black" />}>
+                <Index />
+              </Suspense>
+            </PublicLayout>
+          </PageTransition>
+        }
+      />
+    );
+  }
+
   return (
     <PageTransition key={location.pathname}>
       <PublicLayout>
         <Routes location={location}>
-          <Route path="/"              element={<Index />} />
           <Route path="/artists"       element={<Artists />} />
           <Route path="/artists/:id"   element={<ArtistDetail />} />
           <Route path="/distribution"  element={<Distribution />} />
           <Route path="/store"         element={<Store />} />
           <Route path="/store/:id"     element={<ProductDetail />} />
-          <Route path="/propworld"     element={<Propworld />} />
+          <Route path="/propworld"     element={<Suspense fallback={<div className="min-h-screen bg-black" />}><Propworld /></Suspense>} />
           <Route path="/contact"       element={<Contact />} />
           <Route path="/events"        element={<Events />} />
           <Route path="/publication"        element={<Publication />} />
