@@ -77,6 +77,9 @@ interface Screen {
   poster: Texture;
   loop?: HTMLVideoElement;
   loopTex?: VideoTexture;
+  /** Where the loop's file is, and whether it has been asked for yet (see feedLoop). */
+  loopUrl?: string;
+  loopAsked?: boolean;
   /** While filming: the loop time this frame should show. */
   filmT?: number;
   hover: number;
@@ -393,6 +396,8 @@ export interface HubWorld {
   stop(): void;
   openIndex(): number;
   playingIndex(): number;
+  /** For the checks: each ring loop's state. */
+  loops(): { asked: boolean; from: 'memory' | 'address' | 'none'; paused: boolean; time: number; failed: boolean }[];
   playingNeedsFrames(): boolean;
   /** Films step frames slower than real time: the ring loops then follow the hub's clock (paused
    *  and seeked to it) instead of the wall clock, so they play at true speed in the film. */
@@ -426,7 +431,12 @@ export async function createWorld(
   cssHost: HTMLElement,
   tower: Tower,
   root: string,
-  opts: { bloom: boolean; onProgress?: (done: number, total: number) => void },
+  opts: {
+    bloom: boolean;
+    onProgress?: (done: number, total: number) => void;
+    /** A reel was muted or unmuted, by the visitor or by the browser (sound refused before a tap). */
+    onMuted?: (muted: boolean) => void;
+  },
 ): Promise<HubWorld> {
   const renderer = new WebGLRenderer({
     canvas,
@@ -794,7 +804,8 @@ export async function createWorld(
       const sc: Screen = { slot, group, mesh, mat, label, poster, hover: 0, hoverTarget: 0 };
       if (m.kind === 'reel' && m.loop) {
         const v = document.createElement('video');
-        v.src = urlOf(m.loop);
+        // No address yet: its file is fetched the first time its ring comes near (feedLoop).
+        sc.loopUrl = urlOf(m.loop);
         v.muted = true;
         v.loop = true;
         v.playsInline = true;
@@ -842,6 +853,31 @@ export async function createWorld(
   let hovered = -1;
   let opened = -1;
   let filmVideo = false;
+  let gone = false;
+  /** Whether the reels are muted. Kept from one reel to the next. */
+  let mutedPref = false;
+  /**
+   * Hands a ring loop its file. The loops ship with the site, and the site's host answers a
+   * request for part of a file with the whole file. iPhone browsers are documented to need
+   * partial answers before they play a video from an address. So each loop is downloaded whole,
+   * once, the first time its ring comes near, and played from memory, which every browser
+   * accepts. If the download fails, the poster stays.
+   */
+  function feedLoop(sc: Screen) {
+    const v = sc.loop;
+    if (!v || !sc.loopUrl || sc.loopAsked) return;
+    sc.loopAsked = true;
+    fetch(sc.loopUrl)
+      .then((r) => {
+        if (!r.ok || !(r.headers.get('content-type') ?? '').startsWith('video/'))
+          throw new Error(`loop ${r.status}`);
+        return r.arrayBuffer();
+      })
+      .then((file) => {
+        if (!gone) v.src = URL.createObjectURL(new Blob([file], { type: 'video/mp4' }));
+      })
+      .catch(() => {});
+  }
   let openT = 0;
   let openTarget = 0;
   let closing = -1;
@@ -945,6 +981,7 @@ export async function createWorld(
           const v = sc.loop;
           sc.filmT = undefined;
           if (want) {
+            feedLoop(sc);
             if (!v.paused) v.pause();
             if (v.preload !== 'auto') {
               v.preload = 'auto';
@@ -958,7 +995,8 @@ export async function createWorld(
             }
           }
         } else {
-          if (want && sc.loop.paused) sc.loop.play().catch(() => {});
+          if (want) feedLoop(sc);
+          if (want && sc.loop.src && sc.loop.paused) sc.loop.play().catch(() => {});
           if (!want && !sc.loop.paused) sc.loop.pause();
         }
       }
@@ -1149,6 +1187,13 @@ export async function createWorld(
       full.playsInline = true;
       full.crossOrigin = 'anonymous';
       full.loop = true;
+      full.muted = mutedPref;
+      const reel = full;
+      reel.addEventListener('volumechange', () => {
+        if (full !== reel) return;
+        mutedPref = reel.muted;
+        opts.onMuted?.(reel.muted);
+      });
       fullTex = new VideoTexture(full);
       fullTex.colorSpace = SRGBColorSpace;
       full.addEventListener('playing', () => {
@@ -1251,6 +1296,20 @@ export async function createWorld(
     },
     openIndex: () => opened,
     playingIndex: () => playing,
+    loops: () =>
+      screens.flatMap((sc) =>
+        sc.loop
+          ? [
+              {
+                asked: Boolean(sc.loopAsked),
+                from: sc.loop.src.startsWith('blob:') ? ('memory' as const) : sc.loop.src ? ('address' as const) : ('none' as const),
+                paused: sc.loop.paused,
+                time: sc.loop.currentTime,
+                failed: Boolean(sc.loop.error),
+              },
+            ]
+          : [],
+      ),
     filmVideos(on) {
       filmVideo = on;
       if (!on) return;
@@ -1310,6 +1369,7 @@ export async function createWorld(
       return changed;
     },
     setMuted: (m) => {
+      mutedPref = m;
       if (full) full.muted = m;
     },
     setCard(i, card) {
@@ -1328,10 +1388,12 @@ export async function createWorld(
       old.dispose();
     },
     dispose() {
+      gone = true;
       clearMedia();
       for (const sc of screens) {
         if (!sc.loop) continue;
         sc.loop.pause();
+        if (sc.loop.src.startsWith('blob:')) URL.revokeObjectURL(sc.loop.src);
         sc.loop.removeAttribute('src');
         sc.loop.load();
       }

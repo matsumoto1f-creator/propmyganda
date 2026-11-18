@@ -13,6 +13,7 @@ import SocialDock from "@/components/SocialDock";
 import ProtectedRoute from "@/components/dashboard/ProtectedRoute";
 
 import HubHome from "./pages/HubHome";
+import ChunkBoundary from "@/components/ChunkBoundary";
 import Artists from "./pages/Artists";
 import ArtistDetail from "./pages/ArtistDetail";
 import Distribution from "./pages/Distribution";
@@ -122,9 +123,11 @@ const AppRoutes = () => {
         classic={
           <PageTransition key="/">
             <PublicLayout>
-              <Suspense fallback={<div className="min-h-screen bg-black" />}>
-                <Index />
-              </Suspense>
+              <ChunkBoundary page label="This page didn't load">
+                <Suspense fallback={<div className="min-h-screen bg-black" />}>
+                  <Index />
+                </Suspense>
+              </ChunkBoundary>
             </PublicLayout>
           </PageTransition>
         }
@@ -141,7 +144,7 @@ const AppRoutes = () => {
           <Route path="/distribution"  element={<Distribution />} />
           <Route path="/store"         element={<Store />} />
           <Route path="/store/:id"     element={<ProductDetail />} />
-          <Route path="/propworld"     element={<Suspense fallback={<div className="min-h-screen bg-black" />}><Propworld /></Suspense>} />
+          <Route path="/propworld"     element={<ChunkBoundary page label="This page didn't load"><Suspense fallback={<div className="min-h-screen bg-black" />}><Propworld /></Suspense></ChunkBoundary>} />
           <Route path="/contact"       element={<Contact />} />
           <Route path="/events"        element={<Events />} />
           <Route path="/publication"        element={<Publication />} />

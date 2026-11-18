@@ -8,10 +8,12 @@ import {
   splitVideoTitle,
   spotifyTrackId,
   upcomingEvents,
+  wireStories,
   youtubeId,
   type ContentInput,
   type EventRow,
   type Story,
+  type WireRow,
 } from "@/hub/content";
 import { REEL_LOOPS } from "@/hub/reel-loops";
 import { REELS } from "@/components/ReelCarousel";
@@ -150,6 +152,33 @@ describe("hub content: live from the back office", () => {
     const wire = card(buildContent({ ...base, stories }), "wire");
     expect(wire.lines).toEqual(["First", "Second", "Third"]);
     expect(wire.links).toEqual([["Read the Wire", "/publication"], ["Top story", "/publication/first"]]);
+  });
+
+  it("leads the Wire screen with the story that leads the Publication page", () => {
+    const row = (title: string, at: string, more: Partial<WireRow> = {}): WireRow => ({ title, slug: title.toLowerCase().replace(/ /g, "-"), category: "Artists", published_at: at, ...more });
+    const hasPicture = (url: string | null) => Boolean(url);
+    const newest = [row("Newest", "2026-11-18T15:00:00Z"), row("Second", "2026-11-18T14:00:00Z", { cover_url: "https://img.example/2.jpg" }), row("Third", "2026-11-17T15:00:00Z")];
+    const featured = row("Featured last week", "2026-11-11T15:00:00Z", { featured: true });
+    const wireOf = (stories: Story[]) => card(buildContent({ ...base, stories }), "wire");
+
+    // A story staff marked "Feature" leads, even when it is older than the newest ones.
+    let wire = wireOf(wireStories(newest, featured, hasPicture));
+    expect(wire.lines).toEqual(["Featured last week", "Newest", "Second"]);
+    expect(wire.links).toContainEqual(["Top story", "/publication/featured-last-week"]);
+
+    // No featured story: the newest one with a picture leads, as on the Publication page.
+    wire = wireOf(wireStories(newest, undefined, hasPicture));
+    expect(wire.lines).toEqual(["Second", "Newest", "Third"]);
+    expect(wire.links).toContainEqual(["Top story", "/publication/second"]);
+
+    // No pictures at all: the newest leads.
+    wire = wireOf(wireStories(newest, undefined, () => false));
+    expect(wire.lines).toEqual(["Newest", "Second", "Third"]);
+
+    // A featured story that is already among the newest is not listed twice.
+    wire = wireOf(wireStories(newest, { ...newest[2], featured: true }, hasPicture));
+    expect(wire.lines).toEqual(["Third", "Newest", "Second"]);
+    expect(wireStories([], undefined, hasPicture)).toEqual([]);
   });
 
   it("keeps the Wire screen readable while the stories load", () => {

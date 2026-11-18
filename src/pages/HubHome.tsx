@@ -18,15 +18,21 @@ import SEO from "@/components/SEO";
 import { REELS } from "@/components/ReelCarousel";
 import { artists } from "@/lib/data";
 import { SPOTIFY_ARTIST_EMBED, pmgLogo, releases, socialLinks, videos } from "@/lib/exclusiveData";
+import { publicationImage } from "@/lib/publicationImage";
 import { PLAYLISTS } from "@/lib/spotifyCatalog";
 import { BOOKING_URL, DISTRIBUTION_CATALOGUE, RECORDS, navLinks } from "@/lib/site";
 import { holdSmoothScroll } from "@/lib/smoothScroll";
-import { buildContent, type ContentInput, type EventRow, type Story } from "@/hub/content";
+import { buildContent, wireStories, type ContentInput, type EventRow, type Story, type WireRow } from "@/hub/content";
 import type { HubLink } from "@/hub/data";
 import { REEL_LOOPS } from "@/hub/reel-loops";
 import type { HubHandle } from "@/hub/mount";
 
-const POSITION_KEY = "pmg:hub-at";
+/**
+ * Where the visitor was in the hub when they left it for another page, for the Back button.
+ * Kept in memory only, so a fresh load of the home page (a typed address, a bookmark, a reload,
+ * the 404 page's link) always starts at the top.
+ */
+let leftAt = 0;
 
 /** Can this device run the hub? Checked before any of the hub's code is downloaded. */
 function canRunHub(): boolean {
@@ -76,18 +82,48 @@ async function fetchEvents(): Promise<EventRow[]> {
   return (data ?? []) as EventRow[];
 }
 
-/** The newest Wire stories, by the Publication page's rule: published, and with an article or a source. */
+// The Publication page reads the newest 200 stories and looks through the first 6 for a picture.
+const WIRE_WINDOW = 200;
+const WIRE_PICTURE_LOOK = 6;
+
+/**
+ * The Wire stories, by the Publication page's rules: published, with an article or a source, and
+ * led by the story that leads that page. So a story staff mark "Feature" in the back office
+ * leads here too.
+ */
 async function fetchStories(): Promise<Story[]> {
+  const now = new Date().toISOString();
+  const readable = () =>
+    supabase
+      .from("publications")
+      .select("title,slug,category,published_at,featured,cover_url")
+      .not("published_at", "is", null)
+      .lte("published_at", now)
+      .or("source_url.not.is.null,body.neq.");
+  const [newest, starred] = await Promise.all([
+    readable().order("published_at", { ascending: false }).limit(WIRE_PICTURE_LOOK),
+    readable().eq("featured", true).order("published_at", { ascending: false }).limit(1),
+  ]);
+  if (newest.error) throw newest.error;
+  const rows = (newest.data ?? []) as WireRow[];
+  // If the featured read fails, the newest stories still show.
+  const star = starred.error ? undefined : ((starred.data ?? []) as WireRow[]).find((r) => r.featured === true);
+  const leads = star && (rows.some((r) => r.slug === star.slug) || (await inWireWindow(star, now)));
+  return wireStories(rows, leads ? star : undefined, (url) => Boolean(publicationImage(url)));
+}
+
+/** Is this story among the newest 200 published, the ones the Publication page reads? */
+async function inWireWindow(story: WireRow, now: string): Promise<boolean> {
   const { data, error } = await supabase
     .from("publications")
-    .select("title,slug,category,published_at")
+    .select("published_at")
     .not("published_at", "is", null)
-    .lte("published_at", new Date().toISOString())
-    .or("source_url.not.is.null,body.neq.")
+    .lte("published_at", now)
     .order("published_at", { ascending: false })
-    .limit(3);
-  if (error) throw error;
-  return (data ?? []) as Story[];
+    .range(WIRE_WINDOW - 1, WIRE_WINDOW - 1);
+  if (error) return false;
+  const last = ((data ?? []) as { published_at: string | null }[])[0]?.published_at;
+  return !last || new Date(story.published_at ?? 0).getTime() >= new Date(last).getTime();
 }
 
 /** Adds an email to the list, exactly as the Exclusive page does. */
@@ -207,12 +243,7 @@ function Hub({ onUnavailable }: { onUnavailable: () => void }) {
     if (!el) return;
     const stop = new AbortController();
     const release = holdSmoothScroll();
-    let startAt = 0;
-    try {
-      if (cameBack) startAt = Number(window.sessionStorage.getItem(POSITION_KEY)) || 0;
-    } catch {
-      /* storage blocked: start at the top */
-    }
+    const startAt = cameBack ? leftAt : 0;
     import("@/hub/mount")
       .then(({ mountHub }) =>
         mountHub(el, {
@@ -249,11 +280,7 @@ function Hub({ onUnavailable }: { onUnavailable: () => void }) {
   // page is taken out of the document, or the browser has already pulled the scroll back.
   useLayoutEffect(
     () => () => {
-      try {
-        if (handle.current) window.sessionStorage.setItem(POSITION_KEY, String(handle.current.position()));
-      } catch {
-        /* storage blocked */
-      }
+      if (handle.current) leftAt = handle.current.position();
     },
     [],
   );

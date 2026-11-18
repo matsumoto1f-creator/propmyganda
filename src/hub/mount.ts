@@ -64,6 +64,7 @@ interface HubHook {
   logoRect(): Rect | null;
   gpu(): string;
   earth(): string;
+  loops(): { asked: boolean; from: string; paused: boolean; time: number; failed: boolean }[];
 }
 
 export function webgl2(): boolean {
@@ -379,6 +380,8 @@ export async function mountHub(host: HTMLElement, opts: HubOptions): Promise<Hub
     if (!s || !world) return;
     openSlot = slot;
     host.setAttribute('data-open', '');
+    // The words are faded out while a screen is open: take them out of reach of Tab too.
+    words.inert = true;
     lenis?.stop();
     const c = s.card;
     viewerMeta.innerHTML = `<p class="label"><span class="accent">${esc(c.code)}</span></p><h2 class="display v-title">${esc(titleOf(c))}</h2><p class="w-sub">${esc(c.sub)}</p>${
@@ -397,6 +400,7 @@ export async function mountHub(host: HTMLElement, opts: HubOptions): Promise<Hub
     if (openSlot < 0) return;
     openSlot = -1;
     host.removeAttribute('data-open');
+    words.inert = false;
     viewer.removeAttribute('data-on');
     setTimeout(() => {
       if (openSlot < 0) viewer.hidden = true;
@@ -621,6 +625,7 @@ export async function mountHub(host: HTMLElement, opts: HubOptions): Promise<Hub
     logoRect: () => world?.logoRect() ?? null,
     gpu: () => world?.gpu() ?? 'none',
     earth: () => world?.earthState() ?? 'none',
+    loops: () => world?.loops() ?? [],
   };
   hook.__pmg = hookApi;
 
@@ -674,6 +679,11 @@ export async function mountHub(host: HTMLElement, opts: HubOptions): Promise<Hub
     dpr = maxDpr;
     world = await createWorld(canvas, $('#css3d'), tower, opts.root, {
       bloom: !weak,
+      // Keep the button true to the sound, also when the browser mutes a reel itself.
+      onMuted: (m) => {
+        muted = m;
+        $('#viewer-mute').textContent = m ? 'Sound on' : 'Mute';
+      },
       // The pictures are the bulk of the first load: count them as they arrive.
       onProgress: (done, total) =>
         progress(0.1 + 0.8 * (done / Math.max(1, total)), `${done} of ${total} pictures`),

@@ -4,6 +4,8 @@
 //   node scripts/hub-check.mjs --gpu      the same in Chrome on this machine's GPU (live Earth)
 //   node scripts/hub-check.mjs --shots d  also save a picture of every stop into folder d
 //   node scripts/hub-check.mjs --serve 8797  no checks: just serve the built site to look at
+//   add --ranges to answer requests for part of a file (the live host does not, so by default
+//   this does not either)
 //
 // It serves dist/ itself. The site's hosted reels and posters (/__l5e/…) only exist on the live
 // domain, so those requests are passed through to it, read-only. Sign-ups are intercepted and
@@ -53,14 +55,17 @@ const server = createServer(async (req, res) => {
   if (!existsSync(file) || statSync(file).isDirectory()) file = path.join(DIST, "index.html");
   const size = statSync(file).size;
   const type = TYPES[path.extname(file)] ?? "application/octet-stream";
-  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+  // Answer as the live host does: a request for part of a file gets the whole file (measured on
+  // propmyganda.com, 2026-11-18). That is why the ring loops are played from memory (see
+  // src/hub/README.md). --ranges answers parts, to compare.
+  const range = flag("ranges") ? /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "") : null;
   if (range) {
     const start = range[1] ? Number(range[1]) : 0;
     const end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
     res.writeHead(206, { "content-type": type, "content-range": `bytes ${start}-${end}/${size}`, "content-length": end - start + 1, "accept-ranges": "bytes" });
     createReadStream(file, { start, end }).pipe(res);
   } else {
-    res.writeHead(200, { "content-type": type, "content-length": size, "accept-ranges": "bytes" });
+    res.writeHead(200, { "content-type": type, "content-length": size });
     createReadStream(file).pipe(res);
   }
 });
@@ -77,6 +82,9 @@ const launch = (extra) => chromium.launch({ channel: "chrome", args: [...extra, 
 
 let passed = 0;
 const failures = [];
+/** Console errors that came from other sites' pages (embeds). Listed, not counted. */
+const outside = new Set();
+
 function check(name, ok, detail = "") {
   if (ok) passed += 1;
   else failures.push(`${name}${detail ? `: ${detail}` : ""}`);
@@ -98,7 +106,16 @@ async function open(browser, opts = {}) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => {
-    if (m.type() === "error" && !NOISE.test(m.text()) && !NOISE.test(m.location().url ?? "")) errors.push(m.text());
+    if (m.type() !== "error") return;
+    const from = m.location().url ?? "";
+    if (NOISE.test(m.text()) || NOISE.test(from)) return;
+    // A message about another site's own page (an embed's security headers, say) is theirs to
+    // fix. It is listed at the end of the run, not counted as a failure of this site.
+    if (/^https?:/.test(from) && !from.startsWith(BASE)) {
+      outside.add(`${new URL(from).host}: ${m.text().slice(0, 90)}`);
+      return;
+    }
+    errors.push(from ? `${m.text()} (from ${from.slice(0, 80)})` : m.text());
   });
   // Sign-ups never reach the real database.
   const signups = [];
@@ -117,7 +134,7 @@ async function open(browser, opts = {}) {
   }
   if (opts.stories) {
     await page.route("**/rest/v1/publications*", (route) =>
-      route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*" }, contentType: "application/json", body: JSON.stringify(opts.stories()) }));
+      route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*" }, contentType: "application/json", body: JSON.stringify(opts.stories(new URL(route.request().url()))) }));
   }
   return { ctx, page, errors, signups };
 }
@@ -216,27 +233,49 @@ async function hubAt(browser, label, viewport, mobile) {
 async function liveData(browser) {
   console.log("\nLive data from the back office");
   const future = new Date(Date.now() + 20 * 86_400_000).toISOString();
-  let batch = 0;
-  const stories = () => {
-    batch += 1;
-    const at = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
-    return batch === 1
-      ? [{ title: "Checker story one", slug: "checker-one", category: "Artists", published_at: at(1) }, { title: "Checker story two", slug: "checker-two", category: "Business", published_at: at(2) }]
-      : [{ title: "Breaking: a newer story", slug: "newer", category: "Culture", published_at: at(0.1) }, { title: "Checker story one", slug: "checker-one", category: "Artists", published_at: at(1) }];
+  // What the publications table holds, in three steps. The hub asks for the newest few, for the
+  // newest featured one, and (when that one is older) for the 200th newest: answer each as the
+  // database would.
+  let step = 1;
+  const at = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const one = { title: "Checker story one", slug: "checker-one", category: "Artists", published_at: at(1) };
+  const two = { title: "Checker story two", slug: "checker-two", category: "Business", published_at: at(2) };
+  const newer = { title: "Breaking: a newer story", slug: "newer", category: "Culture", published_at: at(0.1) };
+  const filler = Array.from({ length: 6 }, (_, i) => ({ title: `Checker filler ${i}`, slug: `filler-${i}`, category: "Industry", published_at: at(3 + i) }));
+  const starred = { title: "Checker featured story", slug: "checker-featured", category: "Artists", published_at: at(200), featured: true };
+  const table = () => (step === 1 ? [one, two] : step === 2 ? [newer, one] : [newer, one, two, ...filler, starred]);
+  const asked = [];
+  const stories = (url) => {
+    asked.push(url.search);
+    let rows = table();
+    if (url.searchParams.get("featured") === "eq.true") rows = rows.filter((r) => r.featured);
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? rows.length);
+    return rows.slice(offset, offset + limit);
   };
   const events = [{ title: "Nonstop NY: the checker show", event_date: future, status: "upcoming", venue: "Checker Hall", city: "Brooklyn", doors_time: "10PM", ticket_url: "https://tickets.example/checker" }];
   const { ctx, page, errors } = await open(browser, { events, stories });
   await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
   await hubReady(page);
   const read = () =>
-    page.evaluate(() => {
+    page.evaluate(async () => {
       const text = (id) => document.querySelector(`.pmg-hub [data-card="${id}"]`)?.closest(".w")?.textContent ?? "";
-      const stop = window.__pmg.stops().findIndex((_, i) => document.querySelector(`.pmg-hub .w[data-i="${i}"] [data-card="events"]`));
-      window.__pmg.drawAt(window.__pmg.stops()[stop].y);
-      window.__pmg.open(window.__pmg.stops()[stop].slot);
-      const viewer = document.querySelector("#viewer-meta")?.textContent ?? "";
-      window.__pmg.close();
-      return { events: text("events"), wire: text("wire"), viewer, links: [...document.querySelectorAll('.pmg-hub [data-card="wire"]')].map((el) => el.closest(".w")?.innerHTML ?? "").join("") };
+      // What a screen says when it is opened full size (its lines are drawn in 3D, not in the page).
+      const opened = async (id) => {
+        const stops = window.__pmg.stops();
+        const stop = stops.findIndex((_, i) => document.querySelector(`.pmg-hub .w[data-i="${i}"] [data-card="${id}"]`));
+        if (stop < 0) return "";
+        window.__pmg.drawAt(stops[stop].y);
+        window.__pmg.open(stops[stop].slot);
+        await new Promise((r) => setTimeout(r, 120));
+        const meta = document.querySelector("#viewer-meta")?.textContent ?? "";
+        window.__pmg.close();
+        await new Promise((r) => setTimeout(r, 120));
+        return meta;
+      };
+      const viewer = await opened("events");
+      const wireViewer = await opened("wire");
+      return { events: text("events"), wire: text("wire"), viewer, wireViewer, links: [...document.querySelectorAll('.pmg-hub [data-card="wire"]')].map((el) => el.closest(".w")?.innerHTML ?? "").join("") };
     });
   await page.waitForFunction(() => /checker/i.test(document.querySelector("#words")?.innerHTML ?? "") || true, null, { timeout: 5000 });
   await page.waitForTimeout(1500);
@@ -244,20 +283,32 @@ async function liveData(browser) {
   check("an event added in the back office shows on the Events screen", /checker show/i.test(r.viewer) && /Checker Hall/i.test(r.viewer), r.viewer.slice(0, 160));
   check("its ticket link is offered", /tickets\.example\/checker/.test(await page.evaluate(() => document.querySelector("#words")?.innerHTML ?? "")));
   check("the newest Wire story is linked from the Wire screen", /\/publication\/checker-one/.test(r.links), r.links.slice(0, 120));
-  // A new story lands. The hub re-reads when the tab is looked at again, once what it holds is
-  // a minute old: keep "looking" until it does.
-  for (let i = 0; i < 20; i += 1) {
-    await page.evaluate(() => {
-      // What the browser sends when a tab comes back into view (it bubbles up to the window).
-      document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
-    });
-    const landed = await page
-      .waitForFunction(() => /\/publication\/newer/.test(document.querySelector("#words")?.innerHTML ?? ""), null, { timeout: 5_000, polling: 250 })
-      .then(() => true, () => false);
-    if (landed) break;
-  }
+  // The hub re-reads when the tab is looked at again, once what it holds is a minute old: keep
+  // "looking" until the story at this address is the linked one.
+  const lookUntil = async (slug) => {
+    for (let i = 0; i < 20; i += 1) {
+      await page.evaluate(() => {
+        // What the browser sends when a tab comes back into view (it bubbles up to the window).
+        document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
+      });
+      const landed = await page
+        .waitForFunction((s) => (document.querySelector("#words")?.innerHTML ?? "").includes(`/publication/${s}"`), slug, { timeout: 5_000, polling: 250 })
+        .then(() => true, () => false);
+      if (landed) return;
+    }
+  };
+  // A new story lands.
+  step = 2;
+  await lookUntil("newer");
   r = await read();
   check("a story published later replaces it without a reload", /\/publication\/newer/.test(r.links), r.links.slice(0, 120));
+  // Staff press "Feature" on an older story: it leads the Publication page, so it leads here.
+  step = 3;
+  await lookUntil("checker-featured");
+  r = await read();
+  check("a story staff marked Feature is the Wire screen's top story", /\/publication\/checker-featured"/.test(r.links), r.links.slice(0, 160));
+  check("it is listed first, above the newest", /Checker featured story[\s\S]*Breaking: a newer story/.test(r.wireViewer), r.wireViewer.slice(0, 200));
+  check("it asked the database for the featured story and for the 200th newest", asked.some((q) => /featured=eq\.true/.test(q)) && asked.some((q) => /offset=199/.test(q)), asked.slice(-3).join(" | ").slice(0, 200));
   check("no script errors", errors.length === 0, errors.slice(0, 3).join(" | "));
   await ctx.close();
 
@@ -269,6 +320,40 @@ async function liveData(browser) {
   const top = await real.page.evaluate(() => /href="(\/publication\/[^"]+)"/.exec(document.querySelector("#words")?.innerHTML ?? "")?.[1] ?? "");
   check("the real Wire feed reaches the hub", top.length > 13, top);
   await real.ctx.close();
+}
+
+async function ringLoops(browser) {
+  console.log("\nThe ring loops");
+  const { ctx, page, errors } = await open(browser, { viewport: { width: 1440, height: 900 } });
+  const asked = [];
+  page.on("request", (req) => {
+    if (/\/hub\/reels\/.+\.mp4$/.test(new URL(req.url()).pathname)) asked.push(req.headers().range ? "part" : "whole");
+  });
+  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+  await hubReady(page);
+  await page.waitForTimeout(2000);
+  const before = await page.evaluate(() => window.__pmg.loops());
+  check("the reels have loops, and at the top of the page none has been downloaded", before.length >= 1 && before.every((l) => !l.asked) && asked.length === 0, `${before.length} loops, ${asked.length} asked`);
+  // Walk down the tower until a loop is moving.
+  const moving = await page.evaluate(async () => {
+    const hub = window.__pmg;
+    for (const stop of hub.stops()) {
+      hub.drawAt(stop.y);
+      for (let i = 0; i < 40; i += 1) {
+        await new Promise((r) => setTimeout(r, 150));
+        const on = hub.loops().filter((l) => !l.paused && l.time > 0);
+        if (on.length) return { on: on.length, from: on[0].from, y: stop.y };
+        if (!hub.loops().some((l) => l.asked)) break; // no ring near at this stop
+      }
+    }
+    return { on: 0, from: "none", y: -1 };
+  });
+  check("near its ring, a loop plays", moving.on >= 1, JSON.stringify(moving));
+  check("it plays from memory, fetched whole", moving.from === "memory" && asked.length >= 1 && asked.every((a) => a === "whole"), `${moving.from}; requests: ${asked.join(",")}`);
+  const state = await page.evaluate(() => window.__pmg.loops());
+  check("no loop failed to load", state.every((l) => !l.failed), JSON.stringify(state).slice(0, 200));
+  check("no script errors", errors.length === 0, errors.slice(0, 3).join(" | "));
+  await ctx.close();
 }
 
 async function joinForm(browser) {
@@ -325,6 +410,126 @@ async function playing(browser) {
   await ctx.close();
 }
 
+/** With a screen open, what is on top at three points across its player, and can the words be reached? */
+async function playersTakeClicks(browser) {
+  console.log("\nPlayers on an opened screen");
+  for (const [label, viewport, mobile] of [["desktop", { width: 1440, height: 900 }, false], ["phone", { width: 390, height: 844 }, true]]) {
+    const { ctx, page } = await open(browser, { viewport, mobile, dpr: mobile ? 2 : 1 });
+    await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+    await hubReady(page);
+    const r = await page.evaluate(async () => {
+      const hub = window.__pmg;
+      const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+      const seen = {};
+      for (const stop of hub.stops().filter((s) => s.kind === "card")) {
+        hub.drawAt(stop.y);
+        hub.open(stop.slot);
+        await wait(1300);
+        const frame = document.querySelector(".pmg-hub .holo-frame iframe");
+        const kind = /spotify/.test(frame?.src ?? "") ? "spotify" : /youtube/.test(frame?.src ?? "") ? "youtube" : "";
+        if (kind && !seen[kind]) {
+          // The player takes clicks once the screen has flown up: give it a few seconds.
+          for (let i = 0; i < 30; i += 1) {
+            const b = frame.getBoundingClientRect();
+            if (document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) === frame) break;
+            await wait(200);
+          }
+          const box = frame.getBoundingClientRect();
+          const top = (x, y) => {
+            const el = document.elementFromPoint(x, y);
+            return el ? el.tagName + (el.id ? `#${el.id}` : "") : "nothing";
+          };
+          const y = box.top + box.height / 2;
+          seen[kind] = {
+            hits: [top(box.left + box.width * 0.12, y), top(box.left + box.width / 2, y), top(box.right - box.width * 0.12, y)],
+            inert: document.querySelector("#words").inert,
+            reachable: [...document.querySelectorAll("#words a, #words button, #words input")].filter((el) => !el.closest("[inert]")).length,
+          };
+        }
+        hub.close();
+        await wait(700);
+        if (kind && seen[kind].after === undefined) seen[kind].after = document.querySelector("#words").inert;
+        if (seen.spotify && seen.youtube) break;
+      }
+      document.querySelector("#now-stop")?.click();
+      return seen;
+    });
+    for (const kind of ["youtube", "spotify"]) {
+      const s = r[kind];
+      check(`${label}: an opened ${kind === "youtube" ? "YouTube" : "Spotify"} player takes clicks and taps across its width`, Boolean(s) && s.hits.every((h) => h === "IFRAME"), s ? s.hits.join(" ") : "no such screen found");
+      check(`${label}: the faded words cannot be clicked or tabbed to meanwhile, and work again after going back`, Boolean(s) && s.inert && s.reachable === 0 && s.after === false, JSON.stringify(s ?? {}));
+    }
+    await ctx.close();
+  }
+}
+
+/** Mute carries from one reel to the next, and the button says what the sound is doing. */
+async function reelSound(browser) {
+  console.log("\nSound on the reels");
+  const { ctx, page } = await open(browser);
+  await page.addInitScript(() => {
+    const make = document.createElement.bind(document);
+    window.__videos = [];
+    document.createElement = (tag, ...rest) => {
+      const el = make(tag, ...rest);
+      if (String(tag).toLowerCase() === "video") window.__videos.push(el);
+      return el;
+    };
+  });
+  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+  await hubReady(page);
+  const r = await page.evaluate(async () => {
+    const hub = window.__pmg;
+    const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+    const state = () => ({ label: document.querySelector("#viewer-mute").textContent, muted: window.__videos[window.__videos.length - 1].muted, videos: window.__videos.length });
+    const out = [];
+    let reels = 0;
+    for (const stop of hub.stops().filter((s) => s.kind === "card")) {
+      hub.drawAt(stop.y);
+      hub.open(stop.slot);
+      await wait(1200);
+      if (document.querySelector("#viewer").hasAttribute("data-reel")) {
+        reels += 1;
+        out.push(state());
+        if (reels === 1) {
+          document.querySelector("#viewer-mute").click();
+          await wait(300);
+          out.push(state());
+        }
+      }
+      hub.close();
+      await wait(700);
+      if (reels === 2) break;
+    }
+    return out;
+  });
+  const honest = (s) => s.label === (s.muted ? "Sound on" : "Mute");
+  check("two reels were opened", r.length === 3, JSON.stringify(r));
+  if (r.length === 3) {
+    check("the Mute button says what the sound is doing, before and after pressing it", r.every(honest) && r[1].muted !== r[0].muted, JSON.stringify(r));
+    check("the choice carries to the next reel", r[2].videos > r[1].videos && r[2].muted === r[1].muted, JSON.stringify(r));
+  }
+  await ctx.close();
+}
+
+/** Opens the hub's menu and follows one of its page links, once the menu has finished opening. */
+async function openFromMenu(page, href) {
+  await page.click("#menu-btn");
+  // The menu reveals its links over about a second; a link takes clicks once it is the top
+  // element at its own centre.
+  await page.waitForFunction(
+    (h) => {
+      const a = document.querySelector(`.pmg-hub .pages a[href="${h}"]`);
+      if (!a) return false;
+      const b = a.getBoundingClientRect();
+      return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) === a;
+    },
+    href,
+    { timeout: 30_000, polling: 100 },
+  );
+  await page.click(`.pmg-hub .pages a[href="${href}"]`);
+}
+
 async function leavingAndReturning(browser) {
   console.log("\nLeaving the hub and coming back");
   const { ctx, page, errors } = await open(browser);
@@ -338,8 +543,7 @@ async function leavingAndReturning(browser) {
     window.__pmg.drawAt(s[4].y);
     return s[4].y;
   });
-  await page.click("#menu-btn");
-  await page.click('.pmg-hub .pages a[href="/events"]');
+  await openFromMenu(page, "/events");
   await page.waitForFunction(() => location.pathname === "/events" && !document.querySelector(".pmg-hub") && document.querySelector("h1"), null, { timeout: 30_000 });
   await page.waitForTimeout(600);
   const after = await page.evaluate(() => ({
@@ -361,6 +565,18 @@ async function leavingAndReturning(browser) {
   check("Back returns to the same place in the hub", Math.abs(back - at) < 40, `${back} vs ${at}`);
   check("no script errors", errors.length === 0, errors.slice(0, 3).join(" | "));
   await ctx.close();
+  // In a new tab: leave part-way down, then load the home page afresh (a typed address, a bookmark).
+  const again = await open(browser);
+  await again.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+  await hubReady(again.page);
+  await again.page.evaluate(() => window.__pmg.drawAt(window.__pmg.stops()[4].y));
+  await openFromMenu(again.page, "/events");
+  await again.page.waitForFunction(() => location.pathname === "/events" && !document.querySelector(".pmg-hub"), null, { timeout: 30_000 });
+  await again.page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+  await hubReady(again.page);
+  const fresh = await again.page.evaluate(() => scrollY);
+  check("a fresh load of the home page starts at the top", fresh < 5, `scrollY ${fresh}`);
+  await again.ctx.close();
 }
 
 async function fallbacks() {
@@ -396,6 +612,17 @@ async function fallbacks() {
   const lenis = await s.page.evaluate(() => document.documentElement.classList.contains("lenis") && !document.documentElement.classList.contains("pmg-hub-on"));
   check("the hub's code fails to load: the classic home page, with the site's smooth scroll back", !r.hub && r.nav && lenis);
   await s.ctx.close();
+  // A page that is loaded on demand fails to arrive, even after the one automatic reload.
+  for (const [name, address, file] of [["the classic home", "/?classic", "Index"], ["PropWorld", "/propworld", "Propworld"]]) {
+    s = await open(soft);
+    await s.page.route(`**/assets/${file}-*.js`, (route) => route.abort());
+    await s.page.goto(`${BASE}${address}`, { waitUntil: "domcontentloaded" });
+    const shown = await s.page
+      .waitForFunction(() => /didn.t load/i.test(document.body.textContent ?? "") && Boolean(document.querySelector("nav")) && Boolean(document.querySelector("button")), null, { timeout: 30_000 })
+      .then(() => true, () => false);
+    check(`${name}'s code fails to load: a message with a Reload button and the site's nav, not a blank page`, shown, (await s.page.evaluate(() => document.body.textContent ?? "")).slice(0, 120));
+    await s.ctx.close();
+  }
   await soft.close();
 }
 
@@ -436,8 +663,11 @@ try {
     await ctx.close();
   } else {
     await liveData(browser);
+    await ringLoops(browser);
     await joinForm(browser);
     await playing(browser);
+    await playersTakeClicks(browser);
+    await reelSound(browser);
     await leavingAndReturning(browser);
     await otherPages(browser);
   }
@@ -447,6 +677,10 @@ try {
 if (!gpu) await fallbacks();
 server.close();
 
+if (outside.size) {
+  console.log("\nConsole messages from other sites' pages (not counted):");
+  for (const o of outside) console.log(`  ${o}`);
+}
 console.log(`\n${passed} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAILED: ${f}`);
 process.exit(failures.length ? 1 : 0);

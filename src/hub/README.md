@@ -19,7 +19,7 @@ Nothing in the hub is typed in twice. `content.ts` builds it from the sources th
 | Playlists | `PLAYLISTS` in `src/lib/spotifyCatalog.ts` | editing that list |
 | Roster and playlist covers and names | Spotify, read live in the browser | nothing: it follows Spotify |
 | Events screen (next show, tickets) | the `events` table | the back office |
-| Wire screen (three newest headlines) | the `publications` table | the back office (and the news scraper) |
+| Wire screen (the Publication page's lead story, then the newest headlines) | the `publications` table | the back office (and the news scraper); "Feature" a story there and it leads here too |
 | Sign-up form | inserts into `newsletter_subscribers` | the same row the Exclusive page writes |
 
 The two live tables are read with the same rules as the Events and Publication pages, when the
@@ -33,6 +33,12 @@ The rings play short loops (`public/hub/reels/N-loop.mp4`, 360x640, 8 seconds) s
 does not download the 33 MB originals; the original plays when a reel is opened. Loops are matched
 to reels by asset id in `reel-loops.ts`. A reel without a loop still works: its poster shows in the
 ring. To add a loop, cut one (the command is in `reel-loops.ts`) and add a line there.
+
+Each loop is downloaded whole the first time its ring comes near and played from memory. That is
+on purpose: the site's host answers a request for part of a file with the whole file, and iPhone
+browsers are documented to need partial answers before they play a video from an address. Played
+from memory, the loops run in Safari on a Mac and in Chrome (checked 2026-11-18). An iPhone itself
+has not been checked. The originals come from the asset store, which does answer partial requests.
 
 ## Devices that cannot run it
 

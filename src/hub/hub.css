@@ -398,6 +398,13 @@ html.pmg-hub-on body {
   position: relative;
   z-index: 3;
 }
+/* While a screen is open, its player (Spotify, YouTube) is under the scroll track and the faded
+   words. Clicks and taps must go through both to reach it. */
+.pmg-hub[data-open] .track,
+.pmg-hub[data-open] .words,
+.pmg-hub[data-open] .words * {
+  pointer-events: none !important;
+}
 .pmg-hub .words {
   position: fixed;
   inset: 0;

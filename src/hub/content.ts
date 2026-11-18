@@ -55,6 +55,13 @@ export interface Story {
   slug: string;
   category: string;
   published_at: string | null;
+  /** The story that leads the Publication page (see wireStories). */
+  lead?: boolean;
+}
+/** A story as the Wire queries return it. */
+export interface WireRow extends Story {
+  featured?: boolean | null;
+  cover_url?: string | null;
 }
 
 export interface ContentInput {
@@ -163,10 +170,35 @@ function eventsCard(events: EventRow[] | undefined): Card {
   };
 }
 
+/**
+ * The stories for the Wire screen, with the one that leads the Publication page marked. That
+ * page leads with a story staff marked "Feature" if there is one, else the newest that has a
+ * picture, else the newest. `newest` is the newest few, newest first. `featured` is the newest
+ * featured story, passed only while the Publication page would still show it.
+ */
+export function wireStories(
+  newest: WireRow[],
+  featured: WireRow | undefined,
+  hasPicture: (url: string | null) => boolean,
+): Story[] {
+  const lead = featured ?? newest.find((r) => hasPicture(r.cover_url ?? null)) ?? newest[0];
+  const rows = lead && !newest.some((r) => r.slug === lead.slug) ? [lead, ...newest] : newest;
+  return rows.map(({ title, slug, category, published_at }) => ({
+    title,
+    slug,
+    category,
+    published_at,
+    lead: slug === lead?.slug,
+  }));
+}
+
 function wireCard(stories: Story[] | undefined, now: number): Card {
-  const live = stories ? liveStories(stories, now).slice(0, 3) : [];
+  const live = stories ? liveStories(stories, now) : [];
+  // The Publication page's lead story first, then the newest.
+  const lead = live.find((s) => s.lead) ?? live[0];
+  const shown = lead ? [lead, ...live.filter((s) => s !== lead)].slice(0, 3) : [];
   const links: HubLink[] = [['Read the Wire', '/publication']];
-  if (live[0]) links.push(['Top story', `/publication/${live[0].slug}`]);
+  if (lead) links.push(['Top story', `/publication/${lead.slug}`]);
   return {
     id: 'wire',
     code: 'Propmyganda · Editorial',
@@ -174,8 +206,8 @@ function wireCard(stories: Story[] | undefined, now: number): Card {
     sub: 'Publication · live feed',
     aspect: 4 / 5,
     media: { kind: 'info' },
-    lines: live.length
-      ? live.map((s) => clip(s.title, 38))
+    lines: shown.length
+      ? shown.map((s) => clip(s.title, 38))
       : ['Business · Artists · Culture', 'Milestones · Industry'],
     links,
   };
