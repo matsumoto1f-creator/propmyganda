@@ -24,9 +24,13 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [react(), mcpPlugin(), mode === "development" && componentTagger()].filter(Boolean),
+    // The Earth behind the home page hub starts its helpers as module workers.
+    worker: { format: "es" },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
+        // The live Earth behind the home page hub (Earthlight, MIT, in vendor/earthlight).
+        "earthlight-backdrop": path.resolve(__dirname, "./vendor/earthlight/pmg-backdrop.ts"),
       },
       dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
     },

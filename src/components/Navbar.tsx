@@ -3,18 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import pmgLogo from "@/assets/pmg-logo-clean.png";
 import { useAuth } from "@/hooks/use-auth";
+import { navLinks } from "@/lib/site";
 
-const navLinks = [
-  { label: "Home",         path: "/" },
-  { label: "Records",      path: "/artists" },
-  { label: "Events",       path: "/events" },
-  { label: "Exclusive",    path: "/exclusive" },
-  { label: "Distribution", path: "/distribution" },
-  { label: "Publication",  path: "/publication" },
-  { label: "Store",        path: "/store" },
-  { label: "Propworld",    path: "/propworld" },
-  { label: "Contact",      path: "/contact" },
-];
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);

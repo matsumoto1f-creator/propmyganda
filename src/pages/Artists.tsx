@@ -8,6 +8,7 @@ import { HudLink, LogLine, PHOS, Tile } from "@/components/records/ui";
 import { AmbientField } from "@/components/records/AmbientField";
 import { useSpotifyPlayer } from "@/components/records/SpotifyPlayer";
 import { PLAYLISTS, useSpotifyCatalog } from "@/lib/spotifyCatalog";
+import { BOOKING_URL, RECORDS } from "@/lib/site";
 
 type Artist = (typeof artists)[number] & {
   bio?: string;
@@ -16,15 +17,6 @@ type Artist = (typeof artists)[number] & {
   albumCover?: string;
 };
 
-const BOOKING_URL = "/start";
-
-// PMG Records roster — artists we release with (not distribution clients).
-const RECORDS = [
-  { id: "jahballa", cat: "PMG-R-001", tone: "navy" },
-  { id: "hammad", cat: "PMG-R-002", tone: "sage" },
-  { id: "stockz", cat: "PMG-R-003", tone: "ember" },
-  { id: "zoe", cat: "PMG-R-004", tone: "plum" },
-] as const;
 
 /** The CRT field brightens while audio runs. */
 function Ambient() {

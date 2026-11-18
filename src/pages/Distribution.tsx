@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import Marquee from "@/components/Marquee";
 import ScrollReveal from "@/components/webgl/ScrollReveal";
 import SEO from "@/components/SEO";
+import { DISTRIBUTION_CATALOGUE as CATALOGUE } from "@/lib/site";
 
 const services = [
   { name: "Digital Distribution", desc: "We deliver your music to every major platform — Spotify, Apple Music, Amazon, Tidal, YouTube Music, and 150+ more. Global reach, zero compromise." },
@@ -21,10 +22,6 @@ const stats = [
   { value: "100%", label: "Independent" },
 ];
 
-const CATALOGUE: Record<string, string> = {
-  chuckiee: "PMG-D-001",
-  "mercy-porter": "PMG-D-002",
-};
 
 const Distribution = () => {
   // Distribution clients only. Jahballa, Hammad, Stockz and Zoë moved to Records.

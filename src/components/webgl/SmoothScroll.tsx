@@ -1,24 +1,21 @@
-import { useEffect, useRef } from "react";
-import Lenis from "lenis";
+import { useEffect } from "react";
+import { startSmoothScroll, stopSmoothScroll, tickSmoothScroll } from "@/lib/smoothScroll";
 
 const SmoothScroll = ({ children }: { children: React.ReactNode }) => {
-  const lenisRef = useRef<Lenis | null>(null);
-
   useEffect(() => {
-    const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      touchMultiplier: 2,
-    });
-    lenisRef.current = lenis;
+    startSmoothScroll();
 
+    let id = 0;
     const raf = (time: number) => {
-      lenis.raf(time);
-      requestAnimationFrame(raf);
+      tickSmoothScroll(time);
+      id = requestAnimationFrame(raf);
     };
-    requestAnimationFrame(raf);
+    id = requestAnimationFrame(raf);
 
-    return () => lenis.destroy();
+    return () => {
+      cancelAnimationFrame(id);
+      stopSmoothScroll();
+    };
   }, []);
 
   return <>{children}</>;

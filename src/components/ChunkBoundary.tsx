@@ -5,6 +5,8 @@ interface Props {
   children: ReactNode;
   /** Shown when the scene cannot be loaded at all. */
   label?: string;
+  /** Around a whole page rather than a scene inside one: the message fills the screen. */
+  page?: boolean;
 }
 
 interface State {
@@ -44,7 +46,7 @@ export default class ChunkBoundary extends Component<Props, State> {
     if (!this.state.hasError) return this.props.children;
 
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-sidebar px-6 text-center text-sidebar-foreground">
+      <div className={`flex h-full w-full flex-col items-center justify-center gap-4 bg-sidebar px-6 text-center text-sidebar-foreground${this.props.page ? " min-h-screen" : ""}`}>
         <p className="font-display text-2xl uppercase tracking-[0.2em] text-electric">
           {this.props.label ?? "This scene didn't load"}
         </p>
