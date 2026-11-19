@@ -404,6 +404,8 @@ export interface HubWorld {
   filmVideos(on: boolean): void;
   /** While filming: true once every loop in view shows the frame for the current clock. */
   videosSettled(): boolean;
+  /** Room to keep clear around an opened screen, in CSS pixels from each edge; null for the default fit. */
+  setOpenBox(box: { left: number; top: number; right: number; bottom: number } | null): void;
   setMuted(m: boolean): void;
   /** Fetches the roster's live titles and cover art from Spotify's public oEmbed; resolves with what changed. */
   liveRoster(): Promise<{ id: string; title: string }[]>;
@@ -853,6 +855,8 @@ export async function createWorld(
   let hovered = -1;
   let opened = -1;
   let filmVideo = false;
+  /** Room kept clear around an opened screen, in CSS pixels from each edge (null: the default fit). */
+  let openBox: { left: number; top: number; right: number; bottom: number } | null = null;
   let gone = false;
   /** Whether the reels are muted. Kept from one reel to the next. */
   let mutedPref = false;
@@ -958,8 +962,18 @@ export async function createWorld(
   /** Pose of a screen flown up to fill the view, in front of the camera. */
   function openPose(sc: Screen) {
     const t = 2 * Math.tan(((camera.fov / 2) * Math.PI) / 180);
-    const d = Math.max(sc.slot.h / (0.84 * t), sc.slot.w / (0.9 * t * camera.aspect));
-    tmpV.set(0, 0, -d).applyQuaternion(camera.quaternion).add(camera.position);
+    // The room the screen may fill, as parts of the view. With a box set (wide windows), it is
+    // the room beside the title panel and under the Back button, so neither covers a player.
+    const b = openBox;
+    const fw = b ? Math.max(0.2, 1 - (b.left + b.right) / width) : 0.9;
+    const fh = b ? Math.max(0.2, 1 - (b.top + b.bottom) / height2) : 0.84;
+    const d = Math.max(sc.slot.h / (fh * t), sc.slot.w / (fw * t * camera.aspect));
+    const cx = b ? (b.left - b.right) / 2 / width : 0;
+    const cy = b ? (b.bottom - b.top) / 2 / height2 : 0;
+    tmpV
+      .set(cx * t * camera.aspect * d, cy * t * d, -d)
+      .applyQuaternion(camera.quaternion)
+      .add(camera.position);
     tmpQ.copy(camera.quaternion);
   }
 
@@ -1367,6 +1381,9 @@ export async function createWorld(
         }),
       );
       return changed;
+    },
+    setOpenBox: (box) => {
+      openBox = box;
     },
     setMuted: (m) => {
       mutedPref = m;

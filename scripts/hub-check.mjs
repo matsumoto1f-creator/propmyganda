@@ -443,6 +443,11 @@ async function playersTakeClicks(browser) {
           seen[kind] = {
             hits: [top(box.left + box.width * 0.12, y), top(box.left + box.width / 2, y), top(box.right - box.width * 0.12, y)],
             inert: document.querySelector("#words").inert,
+            // Does the title panel or the Back button lie over any part of the player?
+            covered: [document.querySelector("#viewer-meta"), document.querySelector(".viewer-ctl")].some((el) => {
+              const c = el.getBoundingClientRect();
+              return c.left < box.right && c.right > box.left && c.top < box.bottom && c.bottom > box.top;
+            }),
             reachable: [...document.querySelectorAll("#words a, #words button, #words input")].filter((el) => !el.closest("[inert]")).length,
           };
         }
@@ -457,6 +462,7 @@ async function playersTakeClicks(browser) {
     for (const kind of ["youtube", "spotify"]) {
       const s = r[kind];
       check(`${label}: an opened ${kind === "youtube" ? "YouTube" : "Spotify"} player takes clicks and taps across its width`, Boolean(s) && s.hits.every((h) => h === "IFRAME"), s ? s.hits.join(" ") : "no such screen found");
+      if (label === "desktop") check(`desktop: the title panel and the Back button are clear of the ${kind === "youtube" ? "YouTube" : "Spotify"} player`, Boolean(s) && s.covered === false, JSON.stringify(s ?? {}));
       check(`${label}: the faded words cannot be clicked or tabbed to meanwhile, and work again after going back`, Boolean(s) && s.inert && s.reachable === 0 && s.after === false, JSON.stringify(s ?? {}));
     }
     await ctx.close();
