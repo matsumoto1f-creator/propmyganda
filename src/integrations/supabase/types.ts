@@ -52,6 +52,59 @@ export type Database = {
           },
         ]
       }
+      addon_orders: {
+        Row: {
+          artist_name: string
+          created_at: string
+          email: string
+          id: string
+          items: Json
+          notes: string | null
+          order_id: string | null
+          paid_at: string | null
+          status: string
+          stripe_payment_intent: string | null
+          stripe_session_id: string | null
+          total_cents: number
+        }
+        Insert: {
+          artist_name: string
+          created_at?: string
+          email: string
+          id?: string
+          items: Json
+          notes?: string | null
+          order_id?: string | null
+          paid_at?: string | null
+          status?: string
+          stripe_payment_intent?: string | null
+          stripe_session_id?: string | null
+          total_cents: number
+        }
+        Update: {
+          artist_name?: string
+          created_at?: string
+          email?: string
+          id?: string
+          items?: Json
+          notes?: string | null
+          order_id?: string | null
+          paid_at?: string | null
+          status?: string
+          stripe_payment_intent?: string | null
+          stripe_session_id?: string | null
+          total_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "addon_orders_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "onboarding_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_conversations: {
         Row: {
           created_at: string

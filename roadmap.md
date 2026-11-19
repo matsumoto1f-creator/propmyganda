@@ -39,6 +39,8 @@
 - [x] Replace every PMG Fight model, logo, and soundtrack with the corrected uploaded files
 
 ## New tasks
+- [x] Apply uploaded add-on order SQL with staff-only access.
+- [x] Redeploy onboarding, stripe-webhook, onboarding-followups and contact-agent unchanged (November 19).
 - [x] Apply uploaded onboarding progress and funnel tracking SQL with staff-only reporting access.
 - [x] Schedule onboarding followups hourly at minute 17.
 - [x] Deploy onboarding, stripe-webhook, onboarding-followups and contact-agent unchanged.
