@@ -1,7 +1,8 @@
 import { Helmet } from "react-helmet-async";
 
 const SITE_URL = "https://propmyganda.com";
-const DEFAULT_OG = "https://propmyganda.com/og-image.png";
+// A snapshot of the homepage; see docs/link-preview.md for retaking it.
+const DEFAULT_OG = "https://propmyganda.com/og-home.jpg";
 
 interface SEOProps {
   title: string;
