@@ -375,6 +375,21 @@ export async function mountHub(host: HTMLElement, opts: HubOptions): Promise<Hub
   const nowPlaying = $('#now');
   let openSlot = -1;
   let muted = false;
+  /**
+   * On a wide window, an opened screen is framed in the room beside the title panel and under
+   * the Back button, so neither lies over a player's own controls. On one column the panel sits
+   * under the screen already.
+   */
+  function frameOpenScreen() {
+    if (!world) return;
+    const meta = viewerMeta.getBoundingClientRect();
+    const ctl = $('.viewer-ctl').getBoundingClientRect();
+    if (layout === 'column' || meta.width === 0 || innerWidth < 900) {
+      world.setOpenBox(null);
+      return;
+    }
+    world.setOpenBox({ left: meta.right + 24, top: ctl.bottom + 12, right: meta.left, bottom: meta.left });
+  }
   function openScreen(slot: number) {
     const s = tower.slots[slot];
     if (!s || !world) return;
@@ -391,6 +406,7 @@ export async function mountHub(host: HTMLElement, opts: HubOptions): Promise<Hub
     }${c.links ? `<p class="links">${c.links.map((l) => anchor(l)).join('')}</p>` : ''}`;
     viewer.toggleAttribute('data-reel', c.media.kind === 'reel');
     viewer.hidden = false;
+    frameOpenScreen();
     requestAnimationFrame(() => viewer.setAttribute('data-on', ''));
     world.open(slot, true);
     ($('#viewer-close') as HTMLButtonElement).focus();
@@ -472,6 +488,7 @@ export async function mountHub(host: HTMLElement, opts: HubOptions): Promise<Hub
         measure();
         scrollTo(0, at * vh);
         world?.setSize(innerWidth, innerHeight, dpr);
+        if (openSlot >= 0) frameOpenScreen();
         kick();
       },
       { signal },
