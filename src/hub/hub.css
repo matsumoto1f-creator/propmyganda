@@ -625,6 +625,32 @@ html.pmg-hub-on body {
 .pmg-hub .deeper:hover {
   border-color: var(--accent);
 }
+.pmg-hub .made {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hair);
+}
+.pmg-hub .made .label {
+  color: var(--ink-3);
+}
+.pmg-hub .made a {
+  font-family: var(--mono);
+  font-size: max(12px, calc(13 * var(--u)));
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent);
+  padding-bottom: 2px;
+  transition: color 0.4s var(--ease);
+}
+.pmg-hub .made a:hover {
+  color: var(--accent);
+}
 .pmg-hub .credit {
   margin: 0;
   font-family: var(--mono);
@@ -765,6 +791,22 @@ html.pmg-hub-on body {
   }
   .pmg-hub .w-home {
     width: auto;
+  }
+  /* Stevie, 2026-11-19: on a phone the home is the scene alone, no explanation over it. The
+     title stays for screen readers and search. */
+  .pmg-hub .w-home > :not(.w-title) {
+    display: none;
+  }
+  .pmg-hub .w-home .w-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .pmg-hub.at-home .shade {
+    opacity: 0;
   }
   .pmg-hub .w-join .w-title {
     font-size: calc(76 * var(--u));

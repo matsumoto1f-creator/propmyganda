@@ -124,6 +124,8 @@ export const bandHeight = (b: FreeBand) => Math.max(MIN_BAND, b.bottom - b.top);
  *  supports (320 x 568), as a share of a 1:2 still shown top-aligned. On taller phones the
  *  focused screen sits higher and smaller in the still, never over the words. */
 export const STILL_BAND: FreeBand = { top: 0.09, bottom: 0.37 };
+/** Where the logo sits on a one-column home that has no words under it (a share of the height). */
+export const HOME_BARE_Y = 0.37;
 
 export function buildStops(
   tower: Tower,
@@ -152,7 +154,8 @@ export function buildStops(
     y: tower.zoneY[0] + 0.35,
     lookR: 0,
     lookY: tower.zoneY[0] + 0.25,
-    frame: row ? [0.68, 0.36] : [0.5, home ? Math.min(0.31, (home.top + home.bottom) / 2) : 0.31],
+    // With no words under it (one column), the logo and tower sit lower, nearer the middle.
+    frame: row ? [0.68, 0.36] : [0.5, home ? Math.min(bandHeight(home) > 0.6 ? HOME_BARE_Y : 0.31, (home.top + home.bottom) / 2) : 0.31],
     fov,
   });
   ZONES.forEach((_, k) => {

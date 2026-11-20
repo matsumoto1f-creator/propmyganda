@@ -40,6 +40,14 @@ browsers are documented to need partial answers before they play a video from an
 from memory, the loops run in Safari on a Mac and in Chrome (checked 2026-11-18). An iPhone itself
 has not been checked. The originals come from the asset store, which does answer partial requests.
 
+## On a phone
+
+On one column (narrow or portrait screens) the home is the scene alone: the logo on the tower over
+the Earth, with no words over it and no shade on the Earth (Stevie, 2026-11-19: "remove the
+explanation and just have the background"). The home's title stays for screen readers and search.
+The words come back from the first part down. The credit "Made by Kill Everything Digital (53XV
+Studios)" sits at the foot of the hub, above the art and type credits.
+
 ## Devices that cannot run it
 
 No WebGL 2, "reduce motion" switched on, or the hub failing to start: the visitor gets the classic
